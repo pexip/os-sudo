@@ -1,3 +1,9 @@
+sudo (1.8.3p1-1ubuntu3.4pexip1) pexip; urgency=low
+
+  * Prepare Pexip packaging
+
+ -- John-Mark Bell <jmb@pexip.com>  Wed, 25 Dec 2013 04:48:45 +0000
+
 sudo (1.8.3p1-1ubuntu3.4) precise-security; urgency=low
 
   * SECURITY UPDATE: authentication bypass via clock set to epoch
