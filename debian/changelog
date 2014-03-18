@@ -1,8 +1,19 @@
-sudo (1.8.3p1-1ubuntu3.4pexip1) pexip; urgency=low
+sudo (1.8.3p1-1ubuntu3.6pexip1) pexip; urgency=low
 
   * Prepare Pexip packaging
 
- -- John-Mark Bell <jmb@pexip.com>  Wed, 25 Dec 2013 04:48:45 +0000
+ -- Alan Ford <alan@pexip.com>  Tue, 18 Mar 2014 11:31:45 +0000
+
+sudo (1.8.3p1-1ubuntu3.6) precise-security; urgency=medium
+
+  * SECURITY UPDATE: security policy bypass when env_reset is disabled
+    - debian/patches/CVE-2014-0106.patch: fix logic inversion in
+      plugins/sudoers/env.c.
+    - CVE-2014-0106
+  * debian/sudo.sudo.init, debian/sudo-ldap.sudo.init: Set timestamps to
+    epoch in init scripts so they are properly invalidated. (LP: #1223297)
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 11 Mar 2014 07:56:53 -0400
 
 sudo (1.8.3p1-1ubuntu3.4) precise-security; urgency=low
 
