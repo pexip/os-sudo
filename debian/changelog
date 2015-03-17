@@ -1,3 +1,19 @@
+sudo (1.8.3p1-1ubuntu3.7pexip1) pexip; urgency=low
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 17 Mar 2015 23:11:12 +0000
+
+sudo (1.8.3p1-1ubuntu3.7) precise-security; urgency=medium
+
+  * SECURITY UPDATE: arbitrary file access via TZ
+    - debian/patches/CVE-2014-9680.patch: sanity check TZ env variable in
+      configure, configure.in, doc/sudoers.cat, doc/sudoers.man.in,
+      pathnames.h.in, plugins/sudoers/env.c.
+    - CVE-2014-9680
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Thu, 12 Mar 2015 11:32:42 -0400
+
 sudo (1.8.3p1-1ubuntu3.6pexip1) pexip; urgency=low
 
   * Prepare Pexip packaging
