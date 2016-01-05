@@ -41,11 +41,11 @@ writeln_wrap(FILE *fp, char *line, size_t len, size_t maxlen)
     char *indent = "";
     char *beg = line;
     char *end;
+    debug_decl(writeln_wrap, SUDO_DEBUG_LOGGING)
 
     /*
      * Print out line with word wrap around maxlen characters.
      */
-    beg = line;
     while (len > maxlen) {
 	end = beg + maxlen;
 	while (end != beg && *end != ' ')
@@ -69,4 +69,6 @@ writeln_wrap(FILE *fp, char *line, size_t len, size_t maxlen)
     /* Print remainder, if any. */
     if (len)
 	fprintf(fp, "%s%s\n", indent, beg);
+
+    debug_return;
 }

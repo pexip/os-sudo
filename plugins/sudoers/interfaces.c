@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,7 +18,6 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/param.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
 # include <stdlib.h>
@@ -52,6 +51,8 @@
 # define INADDR_NONE ((unsigned int)-1)
 #endif
 
+static struct interface_list interfaces;
+
 /*
  * Parse a space-delimited list of IP address/netmask pairs and
  * store in a list of interface structures.
@@ -61,6 +62,7 @@ set_interfaces(const char *ai)
 {
     char *addrinfo, *addr, *mask;
     struct interface *ifp;
+    debug_decl(set_interfaces, SUDO_DEBUG_NETIF)
 
     addrinfo = estrdup(ai);
     for (addr = strtok(addrinfo, " \t"); addr != NULL; addr = strtok(NULL, " \t")) {
@@ -70,10 +72,10 @@ set_interfaces(const char *ai)
 	*mask++ = '\0';
 
 	/* Parse addr and store in list. */
-	ifp = emalloc(sizeof(*ifp));
+	ifp = ecalloc(1, sizeof(*ifp));
 	if (strchr(addr, ':')) {
 	    /* IPv6 */
-#ifdef HAVE_IN6_ADDR
+#ifdef HAVE_STRUCT_IN6_ADDR
 	    ifp->family = AF_INET6;
 	    if (inet_pton(AF_INET6, addr, &ifp->addr.ip6) != 1 ||
 		inet_pton(AF_INET6, mask, &ifp->netmask.ip6) != 1)
@@ -85,24 +87,29 @@ set_interfaces(const char *ai)
 	} else {
 	    /* IPv4 */
 	    ifp->family = AF_INET;
-	    ifp->addr.ip4.s_addr = inet_addr(addr);
-	    ifp->netmask.ip4.s_addr = inet_addr(mask);
-	    if (ifp->addr.ip4.s_addr == INADDR_NONE ||
-		ifp->netmask.ip4.s_addr == INADDR_NONE) {
+	    if (inet_pton(AF_INET, addr, &ifp->addr.ip4) != 1 ||
+		inet_pton(AF_INET, mask, &ifp->netmask.ip4) != 1) {
 		efree(ifp);
 		continue;
 	    }
 	}
-	ifp->next = interfaces;
-	interfaces = ifp;
+	SLIST_INSERT_HEAD(&interfaces, ifp, entries);
     }
     efree(addrinfo);
+    debug_return;
+}
+
+struct interface_list *
+get_interfaces(void)
+{
+    return &interfaces;
 }
 
 void
 dump_interfaces(const char *ai)
 {
     char *cp, *addrinfo;
+    debug_decl(set_interfaces, SUDO_DEBUG_NETIF)
 
     addrinfo = estrdup(ai);
 
@@ -111,4 +118,5 @@ dump_interfaces(const char *ai)
 	sudo_printf(SUDO_CONV_INFO_MSG, "\t%s\n", cp);
 
     efree(addrinfo);
+    debug_return;
 }

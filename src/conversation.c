@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2005, 2007-2010 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1999-2005, 2007-2012 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,7 +21,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
 # include <stdlib.h>
@@ -47,6 +46,7 @@
 
 #include "sudo.h"
 #include "sudo_plugin.h"
+#include "sudo_plugin_int.h"
 
 extern int tgetpass_flags; /* XXX */
 
@@ -81,7 +81,7 @@ sudo_conversation(int num_msgs, const struct sudo_conv_message msgs[],
 		if (pass == NULL)
 		    goto err;
 		repl->reply = estrdup(pass);
-		zero_bytes(pass, strlen(pass));
+		memset_s(pass, SUDO_CONV_REPL_MAX, 0, strlen(pass));
 		break;
 	    case SUDO_CONV_INFO_MSG:
 		if (msg->msg)
@@ -90,6 +90,10 @@ sudo_conversation(int num_msgs, const struct sudo_conv_message msgs[],
 	    case SUDO_CONV_ERROR_MSG:
 		if (msg->msg)
 		    (void) fputs(msg->msg, stderr);
+		break;
+	    case SUDO_CONV_DEBUG_MSG:
+		if (msg->msg)
+		    sudo_debug_write(msg->msg, strlen(msg->msg), 0);
 		break;
 	    default:
 		goto err;
@@ -103,37 +107,11 @@ err:
     do {
 	repl = &replies[n];
 	if (repl->reply != NULL) {
-	    zero_bytes(repl->reply, strlen(repl->reply));
+	    memset_s(repl->reply, SUDO_CONV_REPL_MAX, 0, strlen(repl->reply));
 	    free(repl->reply);
 	    repl->reply = NULL;
 	}
     } while (n--);
 
     return -1;
-}
-
-int
-_sudo_printf(int msg_type, const char *fmt, ...)
-{
-    va_list ap;
-    FILE *fp;
-    int len;
-
-    switch (msg_type) {
-    case SUDO_CONV_INFO_MSG:
-	fp = stdout;
-	break;
-    case SUDO_CONV_ERROR_MSG:
-	fp = stderr;
-	break;
-    default:
-	errno = EINVAL;
-	return -1;
-    }
-
-    va_start(ap, fmt);
-    len = vfprintf(fp, fmt, ap);
-    va_end(ap);
-
-    return len;
 }

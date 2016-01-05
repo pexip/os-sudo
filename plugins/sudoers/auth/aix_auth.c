@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2005, 2007-2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1999-2005, 2007-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,7 +21,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
 # include <stdlib.h>
@@ -51,11 +50,12 @@
  * http://publib16.boulder.ibm.com/doc_link/en_US/a_doc_lib/libs/basetrf1/authenticate.htm
  */
 int
-aixauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
+sudo_aix_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
 {
     char *pass, *message = NULL;
     int result = 1, reenter = 0;
     int rval = AUTH_SUCCESS;
+    debug_decl(sudo_aix_verify, SUDO_DEBUG_AUTH)
 
     do {
 	pass = auth_getpass(prompt, def_passwd_timeout * 60,
@@ -65,7 +65,7 @@ aixauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
 	efree(message);
 	message = NULL;
 	result = authenticate(pw->pw_name, pass, &reenter, &message);
-	zero_bytes(pass, strlen(pass));
+	memset_s(pass, SUDO_CONV_REPL_MAX, 0, strlen(pass));
 	prompt = message;
     } while (reenter);
 
@@ -84,14 +84,16 @@ aixauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
 	rval = pass ? AUTH_FAILURE : AUTH_INTR;
     }
     efree(message);
-    return rval;
+    debug_return_int(rval);
 }
 
 int
-aixauth_cleanup(struct passwd *pw, sudo_auth *auth)
+sudo_aix_cleanup(struct passwd *pw, sudo_auth *auth)
 {
-    /* Unset AUTHSTATE as it may not be correct for the runas user. */
-    unsetenv("AUTHSTATE");
+    debug_decl(sudo_aix_cleanup, SUDO_DEBUG_AUTH)
 
-    return AUTH_SUCCESS;
+    /* Unset AUTHSTATE as it may not be correct for the runas user. */
+    sudo_unsetenv("AUTHSTATE");
+
+    debug_return_int(AUTH_SUCCESS);
 }

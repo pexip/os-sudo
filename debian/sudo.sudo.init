@@ -11,6 +11,8 @@
 # Description: Provide limited super user privileges to specific users.
 ### END INIT INFO
 
+. /lib/lsb/init-functions
+
 N=/etc/init.d/sudo
 
 set -e
@@ -23,10 +25,10 @@ case "$1" in
                 find /var/lib/sudo -exec touch -d @0 '{}' \;
 	fi
 	;;
-  stop|reload|restart|force-reload)
+  stop|reload|restart|force-reload|status)
 	;;
   *)
-	echo "Usage: $N {start|stop|restart|force-reload}" >&2
+	echo "Usage: $N {start|stop|restart|force-reload|status}" >&2
 	exit 1
 	;;
 esac

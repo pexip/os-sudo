@@ -1,102 +1,200 @@
-sudo (1.8.3p1-1ubuntu3.7) precise-security; urgency=medium
+sudo (1.8.10p3-1+deb8u3) jessie-security; urgency=medium
 
-  * SECURITY UPDATE: arbitrary file access via TZ
-    - debian/patches/CVE-2014-9680.patch: sanity check TZ env variable in
-      configure, configure.in, doc/sudoers.cat, doc/sudoers.man.in,
-      pathnames.h.in, plugins/sudoers/env.c.
-    - CVE-2014-9680
+  * Non-maintainer upload
+  * Disable editing of files via user-controllable symlinks
+    (Closes: #804149) (CVE-2015-5602)
+    - sudoedit path restriction bypass using symlinks
+    - Change warning when user tries to sudoedit a symbolic link
+    - Open sudoedit files with O_NONBLOCK and fail if they are not regular files
+    - Remove S_ISREG check from sudo_edit_open(), it is already done in the
+      caller
+    - Add directory writability checks for sudoedit
+    - Fix directory writability checks for sudoedit
+    - Enable sudoedit directory writability checks by default
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Thu, 12 Mar 2015 11:32:42 -0400
+ -- Ben Hutchings <ben@decadent.org.uk>  Tue, 05 Jan 2016 19:37:34 +0000
 
-sudo (1.8.3p1-1ubuntu3.6) precise-security; urgency=medium
+sudo (1.8.10p3-1+deb8u2) testing-proposed-updates; urgency=medium
 
-  * SECURITY UPDATE: security policy bypass when env_reset is disabled
-    - debian/patches/CVE-2014-0106.patch: fix logic inversion in
-      plugins/sudoers/env.c.
-    - CVE-2014-0106
-  * debian/sudo.sudo.init, debian/sudo-ldap.sudo.init: Set timestamps to
-    epoch in init scripts so they are properly invalidated. (LP: #1223297)
+  * Non-maintainer upload.
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 11 Mar 2014 07:56:53 -0400
+  [ Salvatore Bonaccorso ]
+  * Add CVE-2014-9680-1.patch patch.
+    CVE-2014-9680: unsafe handling of TZ environment variable. (Closes: #772707)
+  * Add CVE-2014-9680-2.patch patch.
+    Documents that a leading ':' is skipped when checking TZ for a
+    fully-qualified path name.
 
-sudo (1.8.3p1-1ubuntu3.4) precise-security; urgency=low
+  [ Christian Kastner ]
+  * In the *.preinst scripts, make sure that dpkg --compare-versions actually
+    has two versions to compare. Closes: #776137
+  * Also in the *.preinst scripts, make sure that /etc/sudoers exists before
+    attempting to chown/chmod it
+  * Include patch from Jakub Wilk to fix 'ignoring time stamp from the
+    future' messages. Closes: #764817
 
-  * SECURITY UPDATE: authentication bypass via clock set to epoch
-    - debian/patches/CVE-2013-1775.patch: ignore time stamp file if it is
-      set to epoch in plugins/sudoers/check.c.
-    - CVE-2013-1775
+ -- Christian Kastner <debian@kvr.at>  Sun, 01 Mar 2015 18:56:17 +0100
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 27 Feb 2013 13:34:15 -0500
+sudo (1.8.10p3-1+deb8u1) testing-proposed-updates; urgency=medium
 
-sudo (1.8.3p1-1ubuntu3.3) precise-proposed; urgency=low
+  * Non-maintainer upload.
+  * Backport upstream's fix for host specifications using a FQDN. These were
+    no longer working since 1.8.8. Closes: #731583
 
-  * debian/patches/pam_env_merge.patch: Merge the PAM environment into the
-    user environment (LP: #982684)
-  * debian/sudo.pam: Use pam_env to read /etc/environment and
-    /etc/default/locale environment files. Reading ~/.pam_environment is not
-    permitted due to security reasons.
+ -- Christian Kastner <debian@kvr.at>  Sat, 17 Jan 2015 15:39:31 +0100
 
- -- Tyler Hicks <tyhicks@canonical.com>  Mon, 21 May 2012 00:48:10 -0500
+sudo (1.8.10p3-1) unstable; urgency=low
 
-sudo (1.8.3p1-1ubuntu3.2) precise-security; urgency=low
+  * new upstream release
+  * add hardening=+all to match login and su
+  * updated VCS URLs and crypto verified watch file, closes: #747473
+  * harmonize configure options for LDAP version to match non-LDAP version,
+    in particular stop using --with-secure-path and add configure_args
+  * enable audit support on Linux systems, closes: #745779
+  * follow upstream change from --with-timedir to --with-rundir
 
-  * SECURITY UPDATE: Properly handle multiple netmasks in sudoers Host and
-    Host_List values
-    - debian/patches/CVE-2012-2337.patch: Don't perform IPv6 checks on IPv4
-      addresses. Based on upstream patch.
-    - CVE-2012-2337
+ -- Bdale Garbee <bdale@gag.com>  Sun, 14 Sep 2014 10:20:15 -0600
 
- -- Tyler Hicks <tyhicks@canonical.com>  Tue, 15 May 2012 23:28:04 -0500
+sudo (1.8.9p5-1) unstable; urgency=low
 
-sudo (1.8.3p1-1ubuntu3.1) precise-proposed; urgency=low
+  * new upstream release, closes: #735328
 
-  * Fix Abort in some PAM modules when timestamp is valid. (LP: #927828)
+ -- Bdale Garbee <bdale@gag.com>  Tue, 04 Feb 2014 11:46:19 -0700
 
- -- TJ (Ubuntu Contributions) <ubuntu@tjworld.net>  Mon, 30 Apr 2012 18:05:21 +0100
+sudo (1.8.9p4-1) unstable; urgency=low
 
-sudo (1.8.3p1-1ubuntu3) precise; urgency=low
+  * new upstream release, closes: #732008
 
-  * SECURITY UPDATE: permissions bypass via format string
-    - debian/patches/CVE-2012-0809.patch: fix format string vulnerability
-      in src/sudo.c.
-    - CVE-2012-0809
+ -- Bdale Garbee <bdale@gag.com>  Wed, 15 Jan 2014 14:55:25 -0700
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 31 Jan 2012 10:25:52 -0500
+sudo (1.8.9p3-1) unstable; urgency=low
 
-sudo (1.8.3p1-1ubuntu2) precise; urgency=low
+  * new upstream release
 
-  * debian/sudo.preinst:
-    - updated to avoid conffile prompt by migrating to the new sudoers file
-      changes in Precise. (LP: #894410)
+ -- Bdale Garbee <bdale@gag.com>  Mon, 13 Jan 2014 14:49:42 -0700
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Thu, 24 Nov 2011 10:48:58 -0500
+sudo (1.8.9~rc1-1) experimental; urgency=low
 
-sudo (1.8.3p1-1ubuntu1) precise; urgency=low
+  * upstream release candidate
 
-  * Merge from debian/testing, remaining changes:
-    - debian/patches/keep_home_by_default.patch:
-      + Set HOME in initial_keepenv_table. (rebased for 1.8.3p1)
-    - debian/patches/enable_badpass.patch: turn on "mail_badpass" by default:
-      + attempting sudo without knowing a login password is as bad as not
-        being listed in the sudoers file, especially if getting the password
-        wrong means doing the access-check-email-notification never happens
-        (rebased for 1.8.3p1)
-    - debian/rules:
-      + compile with --without-lecture --with-tty-tickets (Ubuntu specific)
-      + install man/man8/sudo_root.8 (Ubuntu specific)
-      + install apport hooks
-      + The ubuntu-sudo-as-admin-successful.patch was taken upstream by
-        Debian however it requires a --enable-admin-flag configure flag to
-        actually enable it.
-    - debian/sudoers: 
-      + grant admin group sudo access
-    - debian/sudo-ldap.dirs, debian/sudo.dirs: 
-      + add usr/share/apport/package-hooks
-    - debian/sudo.preinst:
-      + avoid conffile prompt by checking for known default /etc/sudoers
-        and if found installing the correct default /etc/sudoers file
+ -- Bdale Garbee <bdale@gag.com>  Sun, 29 Dec 2013 21:36:12 -0700
 
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Sun, 20 Nov 2011 12:07:45 -0500
+sudo (1.8.9~b2-1) experimental; urgency=low
+
+  * upstream beta release
+  * update Debian standards version
+  * squelch lintian complaint about missing sudo-ldap systemd service, since 
+    the service file is always called 'sudo.service'
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 25 Dec 2013 14:48:23 -0700
+
+sudo (1.8.9~b1-1) experimental; urgency=low
+
+  * upstream beta release
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 27 Nov 2013 09:37:00 -0700
+
+sudo (1.8.8-3) unstable; urgency=low
+
+  * document in README.Debian that the sssd support is enabled in the sudo
+    package, not in the sudo-ldap package, closes: #728289
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 30 Oct 2013 10:33:44 -0600
+
+sudo (1.8.8-2) unstable; urgency=low
+
+  * fix touch errors on boot, closes: #725193
+
+ -- Bdale Garbee <bdale@gag.com>  Tue, 08 Oct 2013 20:11:38 -0600
+
+sudo (1.8.8-1) unstable; urgency=low
+
+  * new upstream release
+
+ -- Bdale Garbee <bdale@gag.com>  Mon, 30 Sep 2013 23:08:49 -0600
+
+sudo (1.8.8~rc1-1) experimental; urgency=low
+
+  * upstream release candidate with several of our patches folded in
+  * set filestamps to epoch instead of an arbitrary old date in the init
+    fragment, closes: #722335
+
+ -- Bdale Garbee <bdale@gag.com>  Thu, 12 Sep 2013 10:16:58 -0700
+
+sudo (1.8.8~b3-1) experimental; urgency=low
+
+  * pre-release of new upstream version, put in experimental
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 04 Sep 2013 07:53:08 -0600
+
+sudo (1.8.7-4) unstable; urgency=low
+
+  * looks like we actually need both --with-sssd and --with-sssd-lib,
+    closes: #719987, #724763
+
+ -- Bdale Garbee <bdale@gag.com>  Fri, 27 Sep 2013 11:48:55 -0600
+
+sudo (1.8.7-3) unstable; urgency=low
+
+  * use --with-sssd-lib to help sudo find libsss-sudo in multiarch path,
+    closes: #719987
+
+ -- Bdale Garbee <bdale@gag.com>  Sat, 17 Aug 2013 15:38:53 +0200
+
+sudo (1.8.7-2) unstable; urgency=low
+
+  * let debhelper scripts manage the update-rc.d calls, closes: #719755
+
+ -- Bdale Garbee <bdale@gag.com>  Fri, 16 Aug 2013 01:48:23 +0200
+
+sudo (1.8.7-1) unstable; urgency=low
+
+  * new upstream version, closes: #715157, #655879
+  * make sudo-ldap package's init.d script be called sudo-ldap
+  * add sssd support to sudo, closes: #719574
+  * recognize lenny, squeeze, and wheezy unmodified sudoers, closes: #660594
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 14 Aug 2013 00:01:14 +0200
+
+sudo (1.8.5p2-1) unstable; urgency=low
+
+  * new upstream version
+  * patch to use flock on hurd, run autoconf in rules, closes: #655883
+  * patch to avoid calling unlink with null pointer on hurd, closes: #655948
+  * patch to actually use hardening build flags, closes: #655417
+  * fix sudo-ldap.postinst syntax issue, closes: #669576
+
+ -- Bdale Garbee <bdale@gag.com>  Thu, 28 Jun 2012 12:01:37 -0600
+
+sudo (1.8.3p2-1) unstable; urgency=high
+
+  * new upstream version, closes: #657985 (CVE-2012-0809)
+  * patch from Pino Toscano to only use selinux on Linux, closes: #655894
+
+ -- Bdale Garbee <bdale@gag.com>  Mon, 30 Jan 2012 16:11:54 -0700
+
+sudo (1.8.3p1-3) unstable; urgency=low
+
+  * patch from Moritz Muehlenhoff enables hardened build flags, closes: #655417
+  * replacement postinst script from Mike Beattie using shell instead of Perl
+  * include systemd service file from Michael Stapelberg, closes: #639633
+  * add init.d status support, closes: #641782
+  * make sudo-ldap package manage a sudoers entry in nsswitch.conf,
+    closes: #610600, #639530
+  * enable mail_badpass in the default sudoers file, closes: #641218
+  * enable selinux support, closes: #655510
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 11 Jan 2012 16:18:13 -0700
+
+sudo (1.8.3p1-2) unstable; urgency=low
+
+  * if upgrading from squeeze, and the sudoers file is unmodified, avoid
+    the packaging system prompting the user about a change they didn't make
+    now that sudoers is a conffile, closes: #612532, #636049
+  * add a recommendation for the use of visudo to the sudoers.d/README file,
+    closes: #648104
+
+ -- Bdale Garbee <bdale@gag.com>  Sat, 12 Nov 2011 16:27:13 -0700
 
 sudo (1.8.3p1-1) unstable; urgency=low
 
@@ -140,33 +238,6 @@ sudo (1.8.2-1) unstable; urgency=low
 
  -- Bdale Garbee <bdale@gag.com>  Wed, 24 Aug 2011 13:33:11 -0600
 
-sudo (1.7.4p6-1ubuntu2) oneiric; urgency=low
-
-  * debian/patches/enable_badpass.patch: turn on "mail_badpass" by default:
-    - attempting sudo without knowing a login password is as bad as not
-      being listed in the sudoers file, especially if getting the password
-      wrong means doing the access-check-email-notification never happens
-      (Closes: 641218).
-
- -- Kees Cook <kees@ubuntu.com>  Sun, 11 Sep 2011 10:29:08 -0700
-
-sudo (1.7.4p6-1ubuntu1) oneiric; urgency=low
-
-  * Merge from debian/unstable, remaining changes:
-    - debian/patches/keep_home_by_default.patch: 
-      + Set HOME in initial_keepenv_table. 
-    - debian/rules:
-      + compile with --without-lecture --with-tty-tickets (Ubuntu specific)
-      + install man/man8/sudo_root.8 (Ubuntu specific)
-      + install apport hooks
-    - debian/sudoers: 
-      + grant admin group sudo access
-    - debian/sudo-ldap.dirs, debian/sudo.dirs: 
-      + add usr/share/apport/package-hooks
-  * drop debian/patches/CVE-2011-0010.patch, applied upstream now
-
- -- Michael Vogt <michael.vogt@ubuntu.com>  Mon, 23 May 2011 09:50:37 +0200
-
 sudo (1.7.4p6-1) unstable; urgency=low
 
   * new upstream version
@@ -182,77 +253,6 @@ sudo (1.7.4p4-6) unstable; urgency=low
     when only the gid is changing, closes: #609641
 
  -- Bdale Garbee <bdale@gag.com>  Tue, 11 Jan 2011 10:22:39 -0700
-
-sudo (1.7.4p4-5ubuntu8) oneiric; urgency=low
-
-  * debian/sudo.preinst:
-    - if well-known ec2 vmbuilder file is found, write a file in
-      sudoers.d for the 'ubuntu' user (LP: #768625)
-
- -- Scott Moser <smoser@ubuntu.com>  Thu, 21 Apr 2011 18:04:34 -0400
-
-sudo (1.7.4p4-5ubuntu7) natty; urgency=low
-
-  * debian/sudo.preinst:
-    - do not consider the ec2 vmbuilder default sudoers file
-      verbatim as its actually customized (LP: #761689)
-
- -- Michael Vogt <michael.vogt@ubuntu.com>  Fri, 15 Apr 2011 16:40:10 +0200
-
-sudo (1.7.4p4-5ubuntu6) natty; urgency=low
-
-  * debian/patches/keep_home_by_default.patch: Set HOME in
-    initial_keepenv_table.  LP: #760140
-
- -- Steve Langasek <steve.langasek@ubuntu.com>  Wed, 13 Apr 2011 12:32:25 -0700
-
-sudo (1.7.4p4-5ubuntu5) natty; urgency=low
-
-  * debian/sudo.preinst:
-    - avoid conffile prompt by checking for known default /etc/sudoers
-      and if found installing the correct default /etc/sudoers file
-      (LP: #690873)
-
- -- Michael Vogt <michael.vogt@ubuntu.com>  Fri, 25 Mar 2011 09:13:43 +0100
-
-sudo (1.7.4p4-5ubuntu4) natty; urgency=low
-
-  * debian/rules: The ubuntu-sudo-as-admin-successful.patch was taken
-    upstream by Debian however it requires a --enable-admin-flag configure
-    flag to actually enable it.
-    (LP: #706045)
-
- -- Bryce Harrington <bryce@ubuntu.com>  Thu, 10 Feb 2011 12:01:53 -0800
-
-sudo (1.7.4p4-5ubuntu3) natty; urgency=low
-
-  * SECURITY UPDATE: privilege escalation via -g when using group Runas_List
-    - debian/patches/CVE-2011-0010.patch: prompt for password when the user is
-      running sudo as himself but as a different group
-    - CVE-2011-0010
-
- -- Jamie Strandboge <jamie@ubuntu.com>  Tue, 18 Jan 2011 16:37:09 -0600
-
-sudo (1.7.4p4-5ubuntu2) natty; urgency=low
-
-  * debian/sudoers: temporarily workaround LP #690873 by adding %admin
-    into the default sudoers file in case people just say "yes" to the
-    dpkg conffile prompt.
-
- -- Kees Cook <kees@ubuntu.com>  Wed, 15 Dec 2010 15:38:17 -0800
-
-sudo (1.7.4p4-5ubuntu1) natty; urgency=low
-
-  * Merge from debian unstable (LP: #689025), remaining changes:
-    - debian/rules:
-      + compile with --without-lecture --with-tty-tickets (Ubuntu specific)
-      + install man/man8/sudo_root.8 (Ubuntu specific)
-      + install apport hooks
-    - debian/sudo-ldap.dirs, debian/sudo.dirs: add
-      usr/share/apport/package-hooks
-  * This upload also fixes: LP: #609645
-
- -- Lorenzo De Liso <blackz@ubuntu.com>  Wed, 15 Dec 2010 21:32:57 +0100
 
 sudo (1.7.4p4-5) unstable; urgency=low
 
@@ -307,47 +307,6 @@ sudo (1.7.4p4-1) unstable; urgency=high
 
  -- Bdale Garbee <bdale@gag.com>  Tue, 07 Sep 2010 12:22:42 -0600
 
-sudo (1.7.2p7-1ubuntu3) natty; urgency=low
-
-  * No-change upload to drop sizable upstream changelog.
-
- -- Martin Pitt <martin.pitt@ubuntu.com>  Mon, 22 Nov 2010 11:24:33 +0100
-
-sudo (1.7.2p7-1ubuntu2) maverick; urgency=low
-
-  * SECURITY UPDATE: privilege escalation via '-g' option when using
-    'user:group' in Runas_Spec
-    - debian/patches/CVE-2010-2956.patch: update match.c to verify both user
-      and group match sudoers when using '-g'
-    - CVE-2010-2956
-
- -- Jamie Strandboge <jamie@ubuntu.com>  Tue, 31 Aug 2010 14:54:06 -0500
-
-sudo (1.7.2p7-1ubuntu1) maverick; urgency=low
-
-  * Merge from debian unstable.  Remaining changes:
-   - debian/rules:
-     - compile with --without-lecture --with-tty-tickets (Ubuntu specific)
-     - install man/man8/sudo_root.8 (Ubuntu specific)
-     - install apport hooks
-   - debian/sudo-ldap.dirs, debian/sudo.dirs: add
-     usr/share/apport/package-hooks
-   - debian/patches/ubuntu-sudo-as-admin-successful.patch: adjust sudo.c so
-     that if the user successfully authenticated and he is in the 'admin'
-     group, then create a stamp ~/.sudo_as_admin_successful. Our default bash
-     profile checks for this and displays a short intro about sudo if the flag
-     is not present
-  * Dropped the following, now included upstream:
-    - fix for CVE-2010-1163
-    - fix for CVE-2010-0426
-    - debian/sudo.postinst, debian/sudo-ldap.postinst: update description to
-      match behavior in sudoers file
-    - don't install init script. Debian moved to /var/lib/sudo from
-      /var/run/sudo, so Ubuntu's tmpfs usage won't clean those out
-      automatically any more, so we now need the initscript.
-
- -- Jamie Strandboge <jamie@ubuntu.com>  Tue, 06 Jul 2010 11:43:05 -0500
-
 sudo (1.7.2p7-1) unstable; urgency=high
 
   * new upstream release with security fix for secure path (CVE-2010-1646),
@@ -383,62 +342,6 @@ sudo (1.7.2p5-1) unstable; urgency=low
 
  -- Bdale Garbee <bdale@gag.com>  Thu, 11 Mar 2010 15:44:53 -0700
 
-sudo (1.7.2p1-1ubuntu5) lucid; urgency=low
-
-  * SECURITY UPDATE: properly verify path in find_path.c for the 'sudoedit'
-    pseudo-command when running from the current working directory and
-    secure_path is disabled
-    - CVE-2010-XXXX
-
- -- Jamie Strandboge <jamie@ubuntu.com>  Wed, 07 Apr 2010 15:35:36 -0500
-
-sudo (1.7.2p1-1ubuntu4) lucid; urgency=low
-
-  * env.c: Revert addition of "http_proxy" again. This was an Ubuntu specific
-    EBW hack, caused inconsistencies with other proxy variables (such as
-    https_proxy and ftp_proxy), made sudo incompatible to upstream
-    behaviour/documentation. This is solved in a much better way in apt itself
-    and gnome-network-properties now. (LP: #432631)
-
- -- Martin Pitt <martin.pitt@ubuntu.com>  Fri, 26 Mar 2010 18:48:18 +0100
-
-sudo (1.7.2p1-1ubuntu3) lucid; urgency=low
-
-  * debian/sudo.postinst, debian/sudo-ldap.postinst: update description to
-    match behaviour in sudoers file. (LP: #534090)
-
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Sun, 07 Mar 2010 19:49:39 -0500
-
-sudo (1.7.2p1-1ubuntu2) lucid; urgency=low
-
-  * SECURITY UPDATE: properly verify path for the 'sudoedit' pseudo-command
-    in match.c
-    - http://sudo.ws/repos/sudo/rev/88f3181692fe
-    - CVE-2010-0426
-
- -- Jamie Strandboge <jamie@ubuntu.com>  Wed, 24 Feb 2010 16:50:11 -0600
-
-sudo (1.7.2p1-1ubuntu1) lucid; urgency=low
-
-  * Merge from debian testing.  Remaining changes:
-   - debian/rules: Disable lecture, enable tty_tickets by default. (Ubuntu
-     specific)
-   - Add debian/sudo_root.8: Explanation of root handling through sudo.
-     Install it in debian/rules. (Ubuntu specific)
-   - sudo.c: If the user successfully authenticated and he is in the 'admin'
-     group, then create a stamp ~/.sudo_as_admin_successful. Our default bash
-     profile checks for this and displays a short intro about sudo if the
-     flag is not present. (Ubuntu specific)
-   - env.c: Add "http_proxy" to initial_keepenv_table, so that it is kept
-     for "sudo apt-get ...". (Ubuntu specific EBW hack, should disappear at
-     some point)
-   - debian/{rules,postinst,sudo-ldap.postinst}: Disable init script
-     installation. Debian reintroduced it because /var/run tmpfs is not the
-     default there, but has been on Ubuntu for ages.
-   - debian/{source_sudo.py,rules,sudo-ldap.dirs,sudo.dirs}: Add apport hook
-
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 08 Feb 2010 18:47:06 -0500
-
 sudo (1.7.2p1-1) unstable; urgency=low
 
   * new upstream version
@@ -465,40 +368,6 @@ sudo (1.7.2-1) unstable; urgency=low
     old use of the --with-exempt=sudo build option, closes: #536220, #536222
 
  -- Bdale Garbee <bdale@gag.com>  Wed, 15 Jul 2009 01:29:46 -0600
-
-sudo (1.7.0-1ubuntu3) lucid; urgency=low
-
-  * debian/{source_sudo.py,rules}: Add apport hook
-
- -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 29 Jan 2010 09:31:00 -0500
-
-sudo (1.7.0-1ubuntu2) karmic; urgency=low
-
-  * env.c: add logic similar to pam_env's stripping of single and double
-    quotes around /etc/environment env vars; fixes literal quotes in LANG when
-    using sudo -i; LP: #387262.
-
- -- Loïc Minier <loic.minier@ubuntu.com>  Mon, 22 Jun 2009 18:03:45 +0200
-
-sudo (1.7.0-1ubuntu1) karmic; urgency=low
-
-  * Merge from debian unstable, remaining changes:
-   - debian/rules: Disable lecture, enable tty_tickets by default. (Ubuntu
-     specific)
-   - Add debian/sudo_root.8: Explanation of root handling through sudo.
-     Install it in debian/rules. (Ubuntu specific)
-   - sudo.c: If the user successfully authenticated and he is in the 'admin'
-     group, then create a stamp ~/.sudo_as_admin_successful. Our default bash
-     profile checks for this and displays a short intro about sudo if the
-     flag is not present. (Ubuntu specific)
-   - env.c: Add "http_proxy" to initial_keepenv_table, so that it is kept
-     for "sudo apt-get ...". (Ubuntu specific EBW hack, should disappear at
-     some point)
-   - debian/{rules,postinst,sudo-ldap.postinst}: Disable init script
-     installation. Debian reintroduced it because /var/run tmpfs is not the
-     default there, but has been on Ubuntu for ages.
-
- -- Martin Pitt <martin.pitt@ubuntu.com>  Mon, 11 May 2009 18:07:03 +0200
 
 sudo (1.7.0-1) unstable; urgency=low
 

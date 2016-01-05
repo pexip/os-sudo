@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2012 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,7 +17,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 
 #include <stdio.h>
 #ifdef STDC_HEADERS
@@ -39,6 +38,8 @@
 #endif /* HAVE_STRINGS_H */
 
 #include "missing.h"
+#include "sudo_debug.h"
+#include "sudo_util.h"
 
 /*
  * Allocate storage for a name=value string and return it.
@@ -49,6 +50,7 @@ fmt_string(const char *var, const char *val)
     size_t var_len = strlen(var);
     size_t val_len = strlen(val);
     char *cp, *str;
+    debug_decl(fmt_string, SUDO_DEBUG_UTIL)
 
     cp = str = malloc(var_len + 1 + val_len + 1);
 	if (str != NULL) {
@@ -60,5 +62,5 @@ fmt_string(const char *var, const char *val)
 	*cp = '\0';
     }
 
-    return str;
+    debug_return_str(str);
 }

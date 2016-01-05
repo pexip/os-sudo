@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,10 +16,7 @@
 
 #include <config.h>
 
-#if defined(HAVE_DLOPEN) || defined(HAVE_SHL_LOAD)
-
 #include <sys/types.h>
-#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <stdio.h>
@@ -40,23 +37,17 @@
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
 #endif /* HAVE_UNISTD_H */
-#if TIME_WITH_SYS_TIME
+#ifdef TIME_WITH_SYS_TIME
 # include <time.h>
-#endif
-#ifdef HAVE_DLOPEN
-# include <dlfcn.h>
-#else
-# include "compat/dlfcn.h"
 #endif
 #include <ctype.h>
 #include <errno.h>
 #include <pwd.h>
 
 #include "sudoers.h"
+#include "sudo_dso.h"
 
-#ifndef RTLD_GLOBAL
-# define RTLD_GLOBAL	0
-#endif
+#if defined(HAVE_DLOPEN) || defined(HAVE_SHL_LOAD)
 
 static void *group_handle;
 static struct sudoers_group_plugin *group_plugin;
@@ -73,6 +64,7 @@ group_plugin_load(char *plugin_info)
     char *args, path[PATH_MAX];
     char **argv = NULL;
     int len, rc = -1;
+    debug_decl(group_plugin_load, SUDO_DEBUG_UTIL)
 
     /*
      * Fill in .so path and split out args (if any).
@@ -86,10 +78,10 @@ group_plugin_load(char *plugin_info)
 	len = snprintf(path, sizeof(path), "%s%s",
 	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "", plugin_info);
     }
-    if (len <= 0 || len >= sizeof(path)) {
-	warningx(_("%s%s: %s"),
-	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "", plugin_info,
-	    strerror(ENAMETOOLONG));
+    if (len <= 0 || (size_t)len >= sizeof(path)) {
+	errno = ENAMETOOLONG;
+	warning("%s%s",
+	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "", plugin_info);
 	goto done;
     }
 
@@ -99,28 +91,28 @@ group_plugin_load(char *plugin_info)
 	goto done;
     }
     if (sb.st_uid != ROOT_UID) {
-	warningx(_("%s must be owned by uid %d"), path, ROOT_UID);
+	warningx(U_("%s must be owned by uid %d"), path, ROOT_UID);
 	goto done;
     }
     if ((sb.st_mode & (S_IWGRP|S_IWOTH)) != 0) {
-	warningx(_("%s must only be writable by owner"), path);
+	warningx(U_("%s must only be writable by owner"), path);
 	goto done;
     }
 
     /* Open plugin and map in symbol. */
-    group_handle = dlopen(path, RTLD_LAZY|RTLD_GLOBAL);
+    group_handle = sudo_dso_load(path, SUDO_DSO_LAZY|SUDO_DSO_GLOBAL);
     if (!group_handle) {
-	warningx(_("unable to dlopen %s: %s"), path, dlerror());
+	warningx(U_("unable to load %s: %s"), path, sudo_dso_strerror());
 	goto done;
     }
-    group_plugin = dlsym(group_handle, "group_plugin");
+    group_plugin = sudo_dso_findsym(group_handle, "group_plugin");
     if (group_plugin == NULL) {
-	warningx(_("unable to find symbol \"group_plugin\" in %s"), path);
+	warningx(U_("unable to find symbol \"group_plugin\" in %s"), path);
 	goto done;
     }
 
     if (GROUP_API_VERSION_GET_MAJOR(group_plugin->version) != GROUP_API_VERSION_MAJOR) {
-	warningx(_("%s: incompatible group plugin major version %d, expected %d"),
+	warningx(U_("%s: incompatible group plugin major version %d, expected %d"),
 	    path, GROUP_API_VERSION_GET_MAJOR(group_plugin->version),
 	    GROUP_API_VERSION_MAJOR);
 	goto done;
@@ -130,14 +122,15 @@ group_plugin_load(char *plugin_info)
      * Split args into a vector if specified.
      */
     if (args != NULL) {
-	int ac = 0, wasblank = TRUE;
+	int ac = 0;
+	bool wasblank = true;
 	char *cp;
 
         for (cp = args; *cp != '\0'; cp++) {
             if (isblank((unsigned char)*cp)) {
-                wasblank = TRUE;
+                wasblank = true;
             } else if (wasblank) {
-                wasblank = FALSE;
+                wasblank = false;
                 ac++;
             }
         }
@@ -154,37 +147,42 @@ group_plugin_load(char *plugin_info)
 done:
     efree(argv);
 
-    if (rc != TRUE) {
+    if (rc != true) {
 	if (group_handle != NULL) {
-	    dlclose(group_handle);
+	    sudo_dso_unload(group_handle);
 	    group_handle = NULL;
 	    group_plugin = NULL;
 	}
     }
 
-    return rc;
+    debug_return_bool(rc);
 }
 
 void
 group_plugin_unload(void)
 {
+    debug_decl(group_plugin_unload, SUDO_DEBUG_UTIL)
+
     if (group_plugin != NULL) {
 	(group_plugin->cleanup)();
 	group_plugin = NULL;
     }
     if (group_handle != NULL) {
-	dlclose(group_handle);
+	sudo_dso_unload(group_handle);
 	group_handle = NULL;
     }
+    debug_return;
 }
 
 int
 group_plugin_query(const char *user, const char *group,
     const struct passwd *pwd)
 {
+    debug_decl(group_plugin_query, SUDO_DEBUG_UTIL)
+
     if (group_plugin == NULL)
-	return FALSE;
-    return (group_plugin->query)(user, group, pwd);
+	debug_return_bool(false);
+    debug_return_bool((group_plugin->query)(user, group, pwd));
 }
 
 #else /* !HAVE_DLOPEN && !HAVE_SHL_LOAD */
@@ -193,29 +191,26 @@ group_plugin_query(const char *user, const char *group,
  * No loadable shared object support.
  */
 
-#ifndef FALSE
-#define FALSE	0
-#endif
-
-struct passwd;
-
 int
 group_plugin_load(char *plugin_info)
 {
-    return FALSE;
+    debug_decl(group_plugin_load, SUDO_DEBUG_UTIL)
+    debug_return_bool(false);
 }
 
 void
 group_plugin_unload(void)
 {
-    return;
+    debug_decl(group_plugin_unload, SUDO_DEBUG_UTIL)
+    debug_return;
 }
 
 int
 group_plugin_query(const char *user, const char *group,
     const struct passwd *pwd)
 {
-    return FALSE;
+    debug_decl(group_plugin_query, SUDO_DEBUG_UTIL)
+    debug_return_bool(false);
 }
 
 #endif /* HAVE_DLOPEN || HAVE_SHL_LOAD */

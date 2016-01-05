@@ -1,12 +1,12 @@
 Source: sudo
 Section: admin
 Priority: optional
-Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
-XSBC-Original-Maintainer: Bdale Garbee <bdale@gag.com>
-Build-Depends: debhelper (>= 7), libpam0g-dev, libldap2-dev, libsasl2-dev, autotools-dev, bison, flex
-Standards-Version: 3.9.2
-Vcs-Git: git://git.gag.com/debian/sudo
-Vcs-Browser: http://git.gag.com/?p=debian/sudo
+Maintainer: Bdale Garbee <bdale@gag.com>
+Build-Depends: debhelper (>= 7), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, autotools-dev, bison, flex, libaudit-dev [linux-any]
+Standards-Version: 3.9.5
+Vcs-Git: git://anonscm.debian.org/collab-maint/sudo.git
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/sudo.git
+Homepage: http://www.sudo.ws/
 
 Package: sudo
 Architecture: any
