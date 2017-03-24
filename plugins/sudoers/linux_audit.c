@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,32 +31,36 @@
 #include <string.h>
 #include <libaudit.h>
 
+#define DEFAULT_TEXT_DOMAIN	"sudoers"
+#include "gettext.h"		/* must be included before missing.h */
+
 #include "missing.h"
-#include "error.h"
+#include "fatal.h"
 #include "alloc.h"
-#include "gettext.h"
+#include "sudo_debug.h"
 #include "linux_audit.h"
 
 /*
  * Open audit connection if possible.
  * Returns audit fd on success and -1 on failure.
  */
-static int
-linux_audit_open(void)
+int
+static linux_audit_open(void)
 {
     static int au_fd = -1;
+    debug_decl(linux_audit_open, SUDO_DEBUG_AUDIT)
 
     if (au_fd != -1)
-	return au_fd;
+	debug_return_int(au_fd);
     au_fd = audit_open();
     if (au_fd == -1) {
 	/* Kernel may not have audit support. */
 	if (errno != EINVAL && errno != EPROTONOSUPPORT && errno != EAFNOSUPPORT)
-	    error(1, _("unable to open audit system"));
+	    fatal(U_("unable to open audit system"));
     } else {
 	(void)fcntl(au_fd, F_SETFD, FD_CLOEXEC);
     }
-    return au_fd;
+    debug_return_int(au_fd);
 }
 
 int
@@ -65,9 +69,10 @@ linux_audit_command(char *argv[], int result)
     int au_fd, rc;
     char *command, *cp, **av;
     size_t size, n;
+    debug_decl(linux_audit_command, SUDO_DEBUG_AUDIT)
 
     if ((au_fd = linux_audit_open()) == -1)
-	return -1;
+	debug_return_int(-1);
 
     /* Convert argv to a flat string. */
     for (size = 0, av = argv; *av != NULL; av++)
@@ -75,8 +80,10 @@ linux_audit_command(char *argv[], int result)
     command = cp = emalloc(size);
     for (av = argv; *av != NULL; av++) {
 	n = strlcpy(cp, *av, size - (cp - command));
-	if (n >= size - (cp - command))
-	    errorx(1, _("internal error, linux_audit_command() overflow"));
+	if (n >= size - (cp - command)) {
+	    fatalx(U_("internal error, %s overflow"),
+		"linux_audit_command()");
+	}
 	cp += n;
 	*cp++ = ' ';
     }
@@ -85,9 +92,9 @@ linux_audit_command(char *argv[], int result)
     /* Log command, ignoring ECONNREFUSED on error. */
     rc = audit_log_user_command(au_fd, AUDIT_USER_CMD, command, NULL, result);
     if (rc <= 0 && errno != ECONNREFUSED)
-	warning(_("unable to send audit message"));
+	warning(U_("unable to send audit message"));
 
     efree(command);
 
-    return rc;
+    debug_return_int(rc);
 }

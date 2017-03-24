@@ -14,7 +14,7 @@
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_EXTENDED_GLOB
+#ifdef HAVE_GLOB
 # include <glob.h>
 #else
 # include "compat/glob.h"
@@ -33,6 +33,7 @@ struct gl_entry {
 };
 
 int test_glob(struct gl_entry *);
+__dso_public int main(int argc, char *argv[]);
 
 int
 main(int argc, char **argv)

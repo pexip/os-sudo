@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2007-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,7 +19,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
 # include <stdlib.h>
@@ -45,13 +44,16 @@
 
 #include "missing.h"
 #include "alloc.h"
-#include "error.h"
+#include "fatal.h"
 #include "lbuf.h"
+#include "sudo_debug.h"
 
 void
 lbuf_init(struct lbuf *lbuf, int (*output)(const char *),
     int indent, const char *continuation, int cols)
 {
+    debug_decl(lbuf_init, SUDO_DEBUG_UTIL)
+
     lbuf->output = output;
     lbuf->continuation = continuation;
     lbuf->indent = indent;
@@ -59,13 +61,30 @@ lbuf_init(struct lbuf *lbuf, int (*output)(const char *),
     lbuf->len = 0;
     lbuf->size = 0;
     lbuf->buf = NULL;
+
+    debug_return;
 }
 
 void
 lbuf_destroy(struct lbuf *lbuf)
 {
+    debug_decl(lbuf_destroy, SUDO_DEBUG_UTIL)
+
     efree(lbuf->buf);
     lbuf->buf = NULL;
+
+    debug_return;
+}
+
+static void
+lbuf_expand(struct lbuf *lbuf, int extra)
+{
+    if (lbuf->len + extra + 1 >= lbuf->size) {
+	do {
+	    lbuf->size += 256;
+	} while (lbuf->len + extra + 1 >= lbuf->size);
+	lbuf->buf = erealloc(lbuf->buf, lbuf->size);
+    }
 }
 
 /*
@@ -77,47 +96,43 @@ lbuf_append_quoted(struct lbuf *lbuf, const char *set, const char *fmt, ...)
 {
     va_list ap;
     int len;
-    char *cp, *s = NULL;
+    char *cp, *s;
+    debug_decl(lbuf_append_quoted, SUDO_DEBUG_UTIL)
 
     va_start(ap, fmt);
     while (*fmt != '\0') {
-	len = 1;
 	if (fmt[0] == '%' && fmt[1] == 's') {
-	    s = va_arg(ap, char *);
-	    len = strlen(s);
-	}
-	/* Assume worst case that all chars must be escaped. */
-	if (lbuf->len + (len * 2) + 1 >= lbuf->size) {
-	    do {
-		lbuf->size += 256;
-	    } while (lbuf->len + len + 1 >= lbuf->size);
-	    lbuf->buf = erealloc(lbuf->buf, lbuf->size);
-	}
-	if (*fmt == '%') {
-	    if (*(++fmt) == 's') {
-		while ((cp = strpbrk(s, set)) != NULL) {
-		    len = (int)(cp - s);
-		    memcpy(lbuf->buf + lbuf->len, s, len);
-		    lbuf->len += len;
-		    lbuf->buf[lbuf->len++] = '\\';
-		    lbuf->buf[lbuf->len++] = *cp;
-		    s = cp + 1;
-		}
-		if (*s != '\0') {
-		    len = strlen(s);
-		    memcpy(lbuf->buf + lbuf->len, s, len);
-		    lbuf->len += len;
-		}
-		fmt++;
-		continue;
+	    if ((s = va_arg(ap, char *)) == NULL)
+		goto done;
+	    while ((cp = strpbrk(s, set)) != NULL) {
+		len = (int)(cp - s);
+		lbuf_expand(lbuf, len + 2);
+		memcpy(lbuf->buf + lbuf->len, s, len);
+		lbuf->len += len;
+		lbuf->buf[lbuf->len++] = '\\';
+		lbuf->buf[lbuf->len++] = *cp;
+		s = cp + 1;
 	    }
+	    if (*s != '\0') {
+		len = strlen(s);
+		lbuf_expand(lbuf, len);
+		memcpy(lbuf->buf + lbuf->len, s, len);
+		lbuf->len += len;
+	    }
+	    fmt += 2;
+	    continue;
 	}
+	lbuf_expand(lbuf, 2);
 	if (strchr(set, *fmt) != NULL)
 	    lbuf->buf[lbuf->len++] = '\\';
 	lbuf->buf[lbuf->len++] = *fmt++;
     }
-    lbuf->buf[lbuf->len] = '\0';
+done:
+    if (lbuf->size != 0)
+	lbuf->buf[lbuf->len] = '\0';
     va_end(ap);
+
+    debug_return;
 }
 
 /*
@@ -128,33 +143,30 @@ lbuf_append(struct lbuf *lbuf, const char *fmt, ...)
 {
     va_list ap;
     int len;
-    char *s = NULL;
+    char *s;
+    debug_decl(lbuf_append, SUDO_DEBUG_UTIL)
 
     va_start(ap, fmt);
     while (*fmt != '\0') {
-	len = 1;
 	if (fmt[0] == '%' && fmt[1] == 's') {
-	    s = va_arg(ap, char *);
+	    if ((s = va_arg(ap, char *)) == NULL)
+		goto done;
 	    len = strlen(s);
+	    lbuf_expand(lbuf, len);
+	    memcpy(lbuf->buf + lbuf->len, s, len);
+	    lbuf->len += len;
+	    fmt += 2;
+	    continue;
 	}
-	if (lbuf->len + len + 1 >= lbuf->size) {
-	    do {
-		lbuf->size += 256;
-	    } while (lbuf->len + len + 1 >= lbuf->size);
-	    lbuf->buf = erealloc(lbuf->buf, lbuf->size);
-	}
-	if (*fmt == '%') {
-	    if (*(++fmt) == 's') {
-		memcpy(lbuf->buf + lbuf->len, s, len);
-		lbuf->len += len;
-		fmt++;
-		continue;
-	    }
-	}
+	lbuf_expand(lbuf, 1);
 	lbuf->buf[lbuf->len++] = *fmt++;
     }
-    lbuf->buf[lbuf->len] = '\0';
+done:
+    if (lbuf->size != 0)
+	lbuf->buf[lbuf->len] = '\0';
     va_end(ap);
+
+    debug_return;
 }
 
 static void
@@ -162,6 +174,7 @@ lbuf_println(struct lbuf *lbuf, char *line, int len)
 {
     char *cp, save;
     int i, have, contlen;
+    debug_decl(lbuf_println, SUDO_DEBUG_UTIL)
 
     contlen = lbuf->continuation ? strlen(lbuf->continuation) : 0;
 
@@ -210,6 +223,8 @@ lbuf_println(struct lbuf *lbuf, char *line, int len)
 	}
 	lbuf->output("\n");
     }
+
+    debug_return;
 }
 
 /*
@@ -221,6 +236,7 @@ lbuf_print(struct lbuf *lbuf)
 {
     char *cp, *ep;
     int len;
+    debug_decl(lbuf_print, SUDO_DEBUG_UTIL)
 
     if (lbuf->buf == NULL || lbuf->len == 0)
 	goto done;
@@ -228,8 +244,12 @@ lbuf_print(struct lbuf *lbuf)
     /* For very small widths just give up... */
     len = lbuf->continuation ? strlen(lbuf->continuation) : 0;
     if (lbuf->cols <= lbuf->indent + len + 20) {
-	lbuf->buf[lbuf->len] = '\0';
-	lbuf->output(lbuf->buf);
+	if (lbuf->len > 0) {
+	    lbuf->buf[lbuf->len] = '\0';
+	    lbuf->output(lbuf->buf);
+	    if (lbuf->buf[lbuf->len - 1] != '\n')
+		lbuf->output("\n");
+	}
 	goto done;
     }
 
@@ -250,4 +270,6 @@ lbuf_print(struct lbuf *lbuf)
 
 done:
     lbuf->len = 0;		/* reset the buffer for re-use. */
+
+    debug_return;
 }

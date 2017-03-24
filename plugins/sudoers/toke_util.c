@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2011
+ * Copyright (c) 1996, 1998-2005, 2007-2013
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -25,7 +25,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
 # include <stdlib.h>
@@ -48,6 +47,8 @@
 # include <malloc.h>
 #endif /* HAVE_MALLOC_H && !STDC_HEADERS */
 #include <ctype.h>
+#include <errno.h>
+
 #include "sudoers.h"
 #include "parse.h"
 #include "toke.h"
@@ -56,62 +57,19 @@
 static int arg_len = 0;
 static int arg_size = 0;
 
-static unsigned char
-hexchar(const char *s)
-{
-    int i;
-    int result = 0;
-
-    s += 2; /* skip \\x */
-    for (i = 0; i < 2; i++) {
-	switch (*s) {
-	case 'A':
-	case 'a':
-	    result += 10;
-	    break;
-	case 'B':
-	case 'b':
-	    result += 11;
-	    break;
-	case 'C':
-	case 'c':
-	    result += 12;
-	    break;
-	case 'D':
-	case 'd':
-	    result += 13;
-	    break;
-	case 'E':
-	case 'e':
-	    result += 14;
-	    break;
-	case 'F':
-	case 'f':
-	    result += 15;
-	    break;
-	default:
-	    result += *s - '0';
-	    break;
-	}
-	if (i == 0) {
-	    result *= 16;
-	    s++;
-	}
-    }
-    return (unsigned char)result;
-}
-
-int
+bool
 fill_txt(const char *src, int len, int olen)
 {
     char *dst;
+    debug_decl(fill_txt, SUDO_DEBUG_PARSER)
 
-    dst = olen ? realloc(yylval.string, olen + len + 1) : malloc(len + 1);
+    dst = olen ? realloc(sudoerslval.string, olen + len + 1) : malloc(len + 1);
     if (dst == NULL) {
-	yyerror(_("unable to allocate memory"));
-	return FALSE;
+	warning(NULL);
+	sudoerserror(NULL);
+	debug_return_bool(false);
     }
-    yylval.string = dst;
+    sudoerslval.string = dst;
 
     /* Copy the string and collapse any escaped characters. */
     dst += olen;
@@ -120,7 +78,7 @@ fill_txt(const char *src, int len, int olen)
 	    if (src[1] == 'x' && len >= 3 && 
 		isxdigit((unsigned char) src[2]) &&
 		isxdigit((unsigned char) src[3])) {
-		*dst++ = hexchar(src);
+		*dst++ = hexchar(src + 2);
 		src += 4;
 		len -= 3;
 	    } else {
@@ -133,35 +91,38 @@ fill_txt(const char *src, int len, int olen)
 	}
     }
     *dst = '\0';
-    return TRUE;
+    debug_return_bool(true);
 }
 
-int
+bool
 append(const char *src, int len)
 {
     int olen = 0;
+    debug_decl(append, SUDO_DEBUG_PARSER)
 
-    if (yylval.string != NULL)
-	olen = strlen(yylval.string);
+    if (sudoerslval.string != NULL)
+	olen = strlen(sudoerslval.string);
 
-    return fill_txt(src, len, olen);
+    debug_return_bool(fill_txt(src, len, olen));
 }
 
 #define SPECIAL(c) \
     ((c) == ',' || (c) == ':' || (c) == '=' || (c) == ' ' || (c) == '\t' || (c) == '#')
 
-int
+bool
 fill_cmnd(const char *src, int len)
 {
     char *dst;
     int i;
+    debug_decl(fill_cmnd, SUDO_DEBUG_PARSER)
 
     arg_len = arg_size = 0;
 
-    dst = yylval.command.cmnd = (char *) malloc(len + 1);
-    if (yylval.command.cmnd == NULL) {
-	yyerror(_("unable to allocate memory"));
-	return FALSE;
+    dst = sudoerslval.command.cmnd = (char *) malloc(len + 1);
+    if (sudoerslval.command.cmnd == NULL) {
+	warning(NULL);
+	sudoerserror(NULL);
+	debug_return_bool(false);
     }
 
     /* Copy the string and collapse any escaped sudo-specific characters. */
@@ -173,17 +134,18 @@ fill_cmnd(const char *src, int len)
     }
     *dst = '\0';
 
-    yylval.command.args = NULL;
-    return TRUE;
+    sudoerslval.command.args = NULL;
+    debug_return_bool(true);
 }
 
-int
+bool
 fill_args(const char *s, int len, int addspace)
 {
     int new_len;
     char *p;
+    debug_decl(fill_args, SUDO_DEBUG_PARSER)
 
-    if (yylval.command.args == NULL) {
+    if (sudoerslval.command.args == NULL) {
 	addspace = 0;
 	new_len = len;
     } else
@@ -194,38 +156,41 @@ fill_args(const char *s, int len, int addspace)
 	while (new_len >= (arg_size += COMMANDARGINC))
 	    ;
 
-	p = yylval.command.args ?
-	    (char *) realloc(yylval.command.args, arg_size) :
+	p = sudoerslval.command.args ?
+	    (char *) realloc(sudoerslval.command.args, arg_size) :
 	    (char *) malloc(arg_size);
 	if (p == NULL) {
-	    efree(yylval.command.args);
-	    yyerror(_("unable to allocate memory"));
-	    return FALSE;
+	    efree(sudoerslval.command.args);
+	    warning(NULL);
+	    sudoerserror(NULL);
+	    debug_return_bool(false);
 	} else
-	    yylval.command.args = p;
+	    sudoerslval.command.args = p;
     }
 
     /* Efficiently append the arg (with a leading space if needed). */
-    p = yylval.command.args + arg_len;
+    p = sudoerslval.command.args + arg_len;
     if (addspace)
 	*p++ = ' ';
-    if (strlcpy(p, s, arg_size - (p - yylval.command.args)) != len) {
-	yyerror(_("fill_args: buffer overflow"));	/* paranoia */
-	return FALSE;
+    if (strlcpy(p, s, arg_size - (p - sudoerslval.command.args)) != (size_t)len) {
+	warningx(U_("fill_args: buffer overflow"));	/* paranoia */
+	sudoerserror(NULL);
+	debug_return_bool(false);
     }
     arg_len = new_len;
-    return TRUE;
+    debug_return_bool(true);
 }
 
 /*
  * Check to make sure an IPv6 address does not contain multiple instances
  * of the string "::".  Assumes strlen(s) >= 1.
- * Returns TRUE if address is valid else FALSE.
+ * Returns true if address is valid else false.
  */
-int
+bool
 ipv6_valid(const char *s)
 {
     int nmatch = 0;
+    debug_decl(ipv6_valid, SUDO_DEBUG_PARSER)
 
     for (; *s != '\0'; s++) {
 	if (s[0] == ':' && s[1] == ':') {
@@ -236,5 +201,5 @@ ipv6_valid(const char *s)
 	    nmatch = 0;			/* reset if we hit netmask */
     }
 
-    return nmatch <= 1;
+    debug_return_bool(nmatch <= 1);
 }

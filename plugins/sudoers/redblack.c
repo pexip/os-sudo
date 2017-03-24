@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2005, 2007, 2009-2011
+ * Copyright (c) 2004-2005, 2007, 2009-2013
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -43,7 +43,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 
 #include <stdio.h>
 #ifdef STDC_HEADERS
@@ -57,6 +56,7 @@
 
 #include "missing.h"
 #include "alloc.h"
+#include "sudo_debug.h"
 #include "redblack.h"
 
 static void rbrepair(struct rbtree *, struct rbnode *);
@@ -90,6 +90,7 @@ struct rbtree *
 rbcreate(int (*compar)(const void *, const void*))
 {
     struct rbtree *tree;
+    debug_decl(rbcreate, SUDO_DEBUG_RBTREE)
 
     tree = (struct rbtree *) emalloc(sizeof(*tree));
     tree->compar = compar;
@@ -110,7 +111,7 @@ rbcreate(int (*compar)(const void *, const void*))
     tree->root.color = black;
     tree->root.data = NULL;
 
-    return tree;
+    debug_return_ptr(tree);
 }
 
 /*
@@ -120,6 +121,7 @@ static void
 rotate_left(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *child;
+    debug_decl(rotate_left, SUDO_DEBUG_RBTREE)
 
     child = node->right;
     node->right = child->left;
@@ -134,6 +136,8 @@ rotate_left(struct rbtree *tree, struct rbnode *node)
 	node->parent->right = child;
     child->left = node;
     node->parent = child;
+
+    debug_return;
 }
 
 /*
@@ -143,6 +147,7 @@ static void
 rotate_right(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *child;
+    debug_decl(rotate_right, SUDO_DEBUG_RBTREE)
 
     child = node->left;
     node->left = child->right;
@@ -157,6 +162,8 @@ rotate_right(struct rbtree *tree, struct rbnode *node)
 	node->parent->right = child;
     child->right = node;
     node->parent = child;
+
+    debug_return;
 }
 
 /*
@@ -170,12 +177,13 @@ rbinsert(struct rbtree *tree, void *data)
     struct rbnode *node = rbfirst(tree);
     struct rbnode *parent = rbroot(tree);
     int res;
+    debug_decl(rbinsert, SUDO_DEBUG_RBTREE)
 
     /* Find correct insertion point. */
     while (node != rbnil(tree)) {
 	parent = node;
 	if ((res = tree->compar(data, node->data)) == 0)
-	    return node;
+	    debug_return_ptr(node);
 	node = res < 0 ? node->left : node->right;
     }
 
@@ -249,7 +257,7 @@ rbinsert(struct rbtree *tree, void *data)
 	}
     }
     rbfirst(tree)->color = black;	/* first node is always black */
-    return NULL;
+    debug_return_ptr(NULL);
 }
 
 /*
@@ -261,13 +269,14 @@ rbfind(struct rbtree *tree, void *key)
 {
     struct rbnode *node = rbfirst(tree);
     int res;
+    debug_decl(rbfind, SUDO_DEBUG_RBTREE)
 
     while (node != rbnil(tree)) {
 	if ((res = tree->compar(key, node->data)) == 0)
-	    return node;
+	    debug_return_ptr(node);
 	node = res < 0 ? node->left : node->right;
     }
-    return NULL;
+    debug_return_ptr(NULL);
 }
 
 /*
@@ -280,23 +289,24 @@ rbapply_node(struct rbtree *tree, struct rbnode *node,
     int (*func)(void *, void *), void *cookie, enum rbtraversal order)
 {
     int error;
+    debug_decl(rbapply_node, SUDO_DEBUG_RBTREE)
 
     if (node != rbnil(tree)) {
 	if (order == preorder)
 	    if ((error = func(node->data, cookie)) != 0)
-		return error;
+		debug_return_int(error);
 	if ((error = rbapply_node(tree, node->left, func, cookie, order)) != 0)
-	    return error;
+	    debug_return_int(error);
 	if (order == inorder)
 	    if ((error = func(node->data, cookie)) != 0)
-		return error;
+		debug_return_int(error);
 	if ((error = rbapply_node(tree, node->right, func, cookie, order)) != 0)
-	    return error;
+	    debug_return_int(error);
 	if (order == postorder)
 	    if ((error = func(node->data, cookie)) != 0)
-		return error;
+		debug_return_int(error);
     }
-    return 0;
+    debug_return_int(0);
 }
 
 /*
@@ -306,6 +316,7 @@ static struct rbnode *
 rbsuccessor(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *succ;
+    debug_decl(rbsuccessor, SUDO_DEBUG_RBTREE)
 
     if ((succ = node->right) != rbnil(tree)) {
 	while (succ->left != rbnil(tree))
@@ -317,7 +328,7 @@ rbsuccessor(struct rbtree *tree, struct rbnode *node)
 	if (succ == rbroot(tree))
 	    succ = rbnil(tree);
     }
-    return succ;
+    debug_return_ptr(succ);
 }
 
 /*
@@ -326,6 +337,7 @@ rbsuccessor(struct rbtree *tree, struct rbnode *node)
 static void
 _rbdestroy(struct rbtree *tree, struct rbnode *node, void (*destroy)(void *))
 {
+    debug_decl(_rbdestroy, SUDO_DEBUG_RBTREE)
     if (node != rbnil(tree)) {
 	_rbdestroy(tree, node->left, destroy);
 	_rbdestroy(tree, node->right, destroy);
@@ -333,6 +345,7 @@ _rbdestroy(struct rbtree *tree, struct rbnode *node, void (*destroy)(void *))
 	    destroy(node->data);
 	efree(node);
     }
+    debug_return;
 }
 
 /*
@@ -342,8 +355,10 @@ _rbdestroy(struct rbtree *tree, struct rbnode *node, void (*destroy)(void *))
 void
 rbdestroy(struct rbtree *tree, void (*destroy)(void *))
 {
+    debug_decl(rbdestroy, SUDO_DEBUG_RBTREE)
     _rbdestroy(tree, rbfirst(tree), destroy);
     efree(tree);
+    debug_return;
 }
 
 /*
@@ -353,6 +368,7 @@ void *rbdelete(struct rbtree *tree, struct rbnode *z)
 {
     struct rbnode *x, *y;
     void *data = z->data;
+    debug_decl(rbdelete, SUDO_DEBUG_RBTREE)
 
     if (z->left == rbnil(tree) || z->right == rbnil(tree))
 	y = z;
@@ -383,7 +399,7 @@ void *rbdelete(struct rbtree *tree, struct rbnode *z)
     }
     free(z); 
     
-    return data;
+    debug_return_ptr(data);
 }
 
 /*
@@ -394,8 +410,9 @@ static void
 rbrepair(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *sibling;
+    debug_decl(rbrepair, SUDO_DEBUG_RBTREE)
 
-    while (node->color == black && node != rbroot(tree)) {
+    while (node->color == black && node != rbfirst(tree)) {
 	if (node == node->parent->left) {
 	    sibling = node->parent->right;
 	    if (sibling->color == red) {
@@ -418,7 +435,7 @@ rbrepair(struct rbtree *tree, struct rbnode *node)
 		node->parent->color = black;
 		sibling->right->color = black;
 		rotate_left(tree, node->parent);
-		node = rbroot(tree); /* exit loop */
+		node = rbfirst(tree); /* exit loop */
 	    }
 	} else { /* if (node == node->parent->right) */
 	    sibling = node->parent->left;
@@ -442,9 +459,11 @@ rbrepair(struct rbtree *tree, struct rbnode *node)
 		node->parent->color = black;
 		sibling->left->color = black;
 		rotate_right(tree, node->parent);
-		node = rbroot(tree); /* exit loop */
+		node = rbfirst(tree); /* exit loop */
 	    }
 	}
     }
     node->color = black;
+
+    debug_return;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -26,6 +26,11 @@
 #  include <stdlib.h>
 # endif
 #endif /* STDC_HEADERS */
+#ifdef HAVE_STDBOOL_H
+# include <stdbool.h>
+#else
+# include "compat/stdbool.h"
+#endif /* HAVE_STDBOOL_H */
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
@@ -35,16 +40,23 @@
 #include <grp.h>
 #include <pwd.h>
 
-#include "list.h"
+#define SUDO_ERROR_WRAP 0
+
+#include "missing.h"
+#include "queue.h"
 #include "parse.h"
 #include "toke.h"
-#include "gram.h"
+#include "sudo_plugin.h"
+#include "sudo_util.h"
+#include <gram.h>
+
+__dso_public int main(int argc, char *argv[]);
 
 /*
  * TODO: test realloc
  */
 
-YYSTYPE yylval;
+YYSTYPE sudoerslval;
 
 struct fill_test {
     const char *input;
@@ -96,8 +108,8 @@ check_fill(const char *input, int len, int addspace, const char *expect, char **
 {
     if (!fill(input, len))
 	return -1;
-    *resultp = yylval.string;
-    return !strcmp(yylval.string, expect);
+    *resultp = sudoerslval.string;
+    return !strcmp(sudoerslval.string, expect);
 }
 
 static int
@@ -105,8 +117,8 @@ check_fill_cmnd(const char *input, int len, int addspace, const char *expect, ch
 {
     if (!fill_cmnd(input, len))
 	return -1;
-    *resultp = yylval.command.cmnd;
-    return !strcmp(yylval.command.cmnd, expect);
+    *resultp = sudoerslval.command.cmnd;
+    return !strcmp(sudoerslval.command.cmnd, expect);
 }
 
 static int
@@ -114,16 +126,16 @@ check_fill_args(const char *input, int len, int addspace, const char *expect, ch
 {
     if (!fill_args(input, len, addspace))
 	return -1;
-    *resultp = yylval.command.args;
-    return !strcmp(yylval.command.args, expect);
+    *resultp = sudoerslval.command.args;
+    return !strcmp(sudoerslval.command.args, expect);
 }
 
 static int
 do_tests(int (*checker)(const char *, int, int, const char *, char **),
     struct fill_test *data, size_t ntests)
 {
-    int i, len;
-    int errors = 0;
+    int len, errors = 0;
+    unsigned int i;
     char *result;
 
     for (i = 0; i < ntests; i++) {
@@ -159,6 +171,8 @@ main(int argc, char *argv[])
 {
     int ntests, errors = 0;
 
+    initprogname(argc > 0 ? argv[0] : "check_fill");
+
     errors += do_tests(check_fill, txt_data, sizeof(txt_data) / sizeof(txt_data[0]));
     errors += do_tests(check_fill_cmnd, cmd_data, sizeof(cmd_data) / sizeof(cmd_data[0]));
     errors += do_tests(check_fill_args, args_data, sizeof(args_data) / sizeof(args_data[0]));
@@ -166,7 +180,7 @@ main(int argc, char *argv[])
     ntests = sizeof(txt_data) / sizeof(txt_data[0]) +
 	sizeof(cmd_data) / sizeof(cmd_data[0]) +
 	sizeof(args_data) / sizeof(args_data[0]);
-    printf("check_fill: %d tests run, %d errors, %d%% success rate\n",
+    printf("%s: %d tests run, %d errors, %d%% success rate\n", getprogname(),
 	ntests, errors, (ntests - errors) * 100 / ntests);
 
     exit(errors);
@@ -174,14 +188,7 @@ main(int argc, char *argv[])
 
 /* STUB */
 void
-cleanup(int gotsig)
-{
-    return;
-}
-
-/* STUB */
-void
-yyerror(const char *s)
+sudoerserror(const char *s)
 {
     return;
 }

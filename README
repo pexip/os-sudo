@@ -11,11 +11,10 @@ version.  The latest sudo may always be gotten via anonymous ftp from
 ftp.sudo.ws in the directory /pub/sudo/ or from the sudo web site,
 http://www.sudo.ws/
 
-The distribution is sudo-M.m.tar.gz where `M' is the major
-version number and `m' is the minor version number.
-BETA versions of sudo may also be available.  If you join
-the `sudo-workers' mailing list you will get the BETA announcements
-(see the `Mailing lists' section below).
+The distribution is sudo-M.m.tar.gz where `M' is the major version
+number and `m' is the minor version number.  BETA versions of sudo may
+also be available.  If you join the `sudo-workers' mailing list you
+will get the BETA announcements (see the `Mailing lists' section below).
 
 What's new
 ==========
@@ -28,28 +27,12 @@ If you are upgrading from an earlier version of Sudo, please see
 the UPGRADE file in the doc directory.
 
 For a history of sudo please see the HISTORY file in the doc directory.
-
-System requirements
-===================
-To build sudo from the source distribution you need a nominally
-POSIX-compliant operating system (any modern version of BSD, Linux
-or UNIX should work), a working ANSI/ISO C compiler (C89 or higher),
-and the ar, make and ranlib utilities
-
-If you wish to modify the parser then you will need flex version
-2.5.2 or later and either bison or byacc (sudo comes with a pre-flex'd
-tokenizer and pre-yacc'd grammar parser).  You'll also have to
-uncomment a few lines from the Makefile or run configure with the
---with-devel option.  You can get flex via anonymous ftp from
-ftp://ftp.ee.lbl.gov/pub/flex* as well as any GNU mirror.  You can
-get GNU bison from ftp://ftp.gnu.org/pub/gnu/bison/ or any GNU
-mirror.
+You can find a list of contributors to sudo in the doc/CONTRIBUTORS file.
 
 Building the release
 ====================
-Please read the installation guide in the `INSTALL' file before
-trying to build sudo.  Pay special attention to the "OS dependent notes"
-section.
+Please read the installation guide in the `INSTALL' file before trying to
+build sudo.  Pay special attention to the "OS dependent notes" section.
 
 Copyright
 =========
@@ -82,9 +65,9 @@ for the appropriate links.
 
 Web page
 ========
-There is a sudo web page at http://www.sudo.ws/ that contains
-an overview of sudo, documentation, downloads, information about
-beta versions and other useful info.
+There is a sudo web page at http://www.sudo.ws/ that contains an
+overview of sudo, documentation, downloads, a bug tracker, information
+about beta versions and other useful info.
 
 Bug reports
 ===========
