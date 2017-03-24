@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -35,9 +35,6 @@
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_SETLOCALE
-# include <locale.h>
-#endif
 #include <pwd.h>
 #include <grp.h>
 #include <time.h>
@@ -46,18 +43,102 @@
 
 struct path_escape {
     const char *name;
-    size_t (*copy_fn)(char *, size_t);
+    size_t (*copy_fn)(char *, size_t, char *);
 };
 
-static size_t fill_seq(char *, size_t);
-static size_t fill_user(char *, size_t);
-static size_t fill_group(char *, size_t);
-static size_t fill_runas_user(char *, size_t);
-static size_t fill_runas_group(char *, size_t);
-static size_t fill_hostname(char *, size_t);
-static size_t fill_command(char *, size_t);
+static size_t
+fill_seq(char *str, size_t strsize, char *logdir)
+{
+#ifdef SUDOERS_NO_SEQ
+    debug_decl(fill_seq, SUDO_DEBUG_UTIL)
+    debug_return_size_t(strlcpy(str, "%{seq}", strsize));
+#else
+    static char sessid[7];
+    int len;
+    debug_decl(fill_seq, SUDO_DEBUG_UTIL)
 
-static struct path_escape escapes[] = {
+    if (sessid[0] == '\0')
+	io_nextid(logdir, def_iolog_dir, sessid);
+
+    /* Path is of the form /var/log/sudo-io/00/00/01. */
+    len = snprintf(str, strsize, "%c%c/%c%c/%c%c", sessid[0],
+	sessid[1], sessid[2], sessid[3], sessid[4], sessid[5]);
+    if (len < 0)
+	debug_return_size_t(strsize); /* handle non-standard snprintf() */
+    debug_return_size_t(len);
+#endif /* SUDOERS_NO_SEQ */
+}
+
+static size_t
+fill_user(char *str, size_t strsize, char *unused)
+{
+    debug_decl(fill_user, SUDO_DEBUG_UTIL)
+    debug_return_size_t(strlcpy(str, user_name, strsize));
+}
+
+static size_t
+fill_group(char *str, size_t strsize, char *unused)
+{
+    struct group *grp;
+    size_t len;
+    debug_decl(fill_group, SUDO_DEBUG_UTIL)
+
+    if ((grp = sudo_getgrgid(user_gid)) != NULL) {
+	len = strlcpy(str, grp->gr_name, strsize);
+	sudo_gr_delref(grp);
+    } else {
+	len = strlen(str);
+	len = snprintf(str + len, strsize - len, "#%u",
+	    (unsigned int) user_gid);
+    }
+    debug_return_size_t(len);
+}
+
+static size_t
+fill_runas_user(char *str, size_t strsize, char *unused)
+{
+    debug_decl(fill_runas_user, SUDO_DEBUG_UTIL)
+    debug_return_size_t(strlcpy(str, runas_pw->pw_name, strsize));
+}
+
+static size_t
+fill_runas_group(char *str, size_t strsize, char *unused)
+{
+    struct group *grp;
+    size_t len;
+    debug_decl(fill_runas_group, SUDO_DEBUG_UTIL)
+
+    if (runas_gr != NULL) {
+	len = strlcpy(str, runas_gr->gr_name, strsize);
+    } else {
+	if ((grp = sudo_getgrgid(runas_pw->pw_gid)) != NULL) {
+	    len = strlcpy(str, grp->gr_name, strsize);
+	    sudo_gr_delref(grp);
+	} else {
+	    len = strlen(str);
+	    len = snprintf(str + len, strsize - len, "#%u",
+		(unsigned int) runas_pw->pw_gid);
+	}
+    }
+    debug_return_size_t(len);
+}
+
+static size_t
+fill_hostname(char *str, size_t strsize, char *unused)
+{
+    debug_decl(fill_hostname, SUDO_DEBUG_UTIL)
+    debug_return_size_t(strlcpy(str, user_shost, strsize));
+}
+
+static size_t
+fill_command(char *str, size_t strsize, char *unused)
+{
+    debug_decl(fill_command, SUDO_DEBUG_UTIL)
+    debug_return_size_t(strlcpy(str, user_base, strsize));
+}
+
+/* Note: "seq" must be first in the list. */
+static struct path_escape io_path_escapes[] = {
     { "seq", fill_seq },
     { "user", fill_user },
     { "group", fill_group },
@@ -67,85 +148,6 @@ static struct path_escape escapes[] = {
     { "command", fill_command },
     { NULL, NULL }
 };
-
-static size_t
-fill_seq(char *str, size_t strsize)
-{
-    static char sessid[7];
-    int len;
-
-    if (sessid[0] == '\0')
-	io_nextid(def_iolog_dir, sessid);
-
-    /* Path is of the form /var/log/sudo-io/00/00/01. */
-    len = snprintf(str, strsize, "%c%c/%c%c/%c%c", sessid[0],
-	sessid[1], sessid[2], sessid[3], sessid[4], sessid[5]);
-    if (len < 0)
-	return strsize;	/* handle non-standard snprintf() */
-    return (size_t)len;
-}
-
-static size_t
-fill_user(char *str, size_t strsize)
-{
-    return strlcpy(str, user_name, strsize);
-}
-
-static size_t
-fill_group(char *str, size_t strsize)
-{
-    struct group *grp;
-    size_t len;
-
-    if ((grp = sudo_getgrgid(user_gid)) != NULL) {
-	len = strlcpy(str, grp->gr_name, strsize);
-	gr_delref(grp);
-    } else {
-	len = strlen(str);
-	len = snprintf(str + len, strsize - len, "#%u",
-	    (unsigned int) user_gid);
-    }
-    return len;
-}
-
-static size_t
-fill_runas_user(char *str, size_t strsize)
-{
-    return strlcpy(str, runas_pw->pw_name, strsize);
-}
-
-static size_t
-fill_runas_group(char *str, size_t strsize)
-{
-    struct group *grp;
-    size_t len;
-
-    if (runas_gr != NULL) {
-	len = strlcpy(str, runas_gr->gr_name, strsize);
-    } else {
-	if ((grp = sudo_getgrgid(runas_pw->pw_gid)) != NULL) {
-	    len = strlcpy(str, grp->gr_name, strsize);
-	    gr_delref(grp);
-	} else {
-	    len = strlen(str);
-	    len = snprintf(str + len, strsize - len, "#%u",
-		(unsigned int) runas_pw->pw_gid);
-	}
-    }
-    return len;
-}
-
-static size_t
-fill_hostname(char *str, size_t strsize)
-{
-    return strlcpy(str, user_shost, strsize);
-}
-
-static size_t
-fill_command(char *str, size_t strsize)
-{
-    return strlcpy(str, user_base, strsize);
-}
 
 /*
  * Concatenate dir + file, expanding any escape sequences.
@@ -158,8 +160,12 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 {
     size_t len, prelen = 0;
     char *dst, *dst0, *path, *pathend, tmpbuf[PATH_MAX];
+    char *slash = NULL;
     const char *endbrace, *src = dir;
-    int pass, strfit;
+    struct path_escape *escapes = NULL;
+    int pass, oldlocale;
+    bool strfit;
+    debug_decl(expand_iolog_path, SUDO_DEBUG_UTIL)
 
     /* Expanded path must be <= PATH_MAX */
     if (prefix != NULL)
@@ -180,21 +186,24 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 	file++;
 
     for (pass = 0; pass < 3; pass++) {
-	strfit = FALSE;
+	strfit = false;
 	switch (pass) {
 	case 0:
 	    src = dir;
+	    escapes = io_path_escapes + 1; /* skip "%{seq}" */
 	    break;
 	case 1:
 	    /* Trim trailing slashes from dir component. */
-	    while (dst - path - 1 > prelen && dst[-1] == '/')
+	    while (dst > path + prelen + 1 && dst[-1] == '/')
 		dst--;
-	    if (slashp)
-		*slashp = dst;
-	    src = "/";
-	    break;
+	    /* The NUL will be replaced with a '/' at the end. */
+	    if (dst + 1 >= pathend)
+		goto bad;
+	    slash = dst++;
+	    continue;
 	case 2:
 	    src = file;
+	    escapes = io_path_escapes;
 	    break;
 	}
 	dst0 = dst;
@@ -211,7 +220,8 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 				break;
 			}
 			if (esc->name != NULL) {
-			    len = esc->copy_fn(dst, (size_t)(pathend - dst));
+			    len = esc->copy_fn(dst, (size_t)(pathend - dst),
+				path + prelen);
 			    if (len >= (size_t)(pathend - dst))
 				goto bad;
 			    dst += len;
@@ -240,22 +250,19 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 	    struct tm *timeptr;
 
 	    time(&now);
-	    timeptr = localtime(&now);
+	    if ((timeptr = localtime(&now)) == NULL)
+		goto bad;
 
-#ifdef HAVE_SETLOCALE
-	    if (!setlocale(LC_ALL, def_sudoers_locale)) {
-		warningx(_("unable to set locale to \"%s\", using \"C\""),
-		    def_sudoers_locale);
-		setlocale(LC_ALL, "C");
-	    }
-#endif
-	    /* We only calls strftime() on the current part of the buffer. */
+	    /* Use sudoers locale for strftime() */
+	    sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
+
+	    /* We only call strftime() on the current part of the buffer. */
 	    tmpbuf[sizeof(tmpbuf) - 1] = '\0';
 	    len = strftime(tmpbuf, sizeof(tmpbuf), dst0, timeptr);
 
-#ifdef HAVE_SETLOCALE
-	    setlocale(LC_ALL, "");
-#endif
+	    /* Restore old locale. */
+	    sudoers_setlocale(oldlocale, NULL);
+
 	    if (len == 0 || tmpbuf[sizeof(tmpbuf) - 1] != '\0')
 		goto bad;		/* strftime() failed, buf too small? */
 
@@ -266,9 +273,12 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 	    *dst = '\0';
 	}
     }
+    if (slashp)
+	*slashp = slash;
+    *slash = '/';
 
-    return path;
+    debug_return_str(path);
 bad:
     efree(path);
-    return NULL;
+    debug_return_str(NULL);
 }

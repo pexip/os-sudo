@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2001-2005, 2007, 2010-2011
+ * Copyright (c) 1999, 2001-2005, 2007, 2010-2012
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,7 +21,6 @@
 
 #include <config.h>
 
-#include <sys/param.h>
 #include <sys/types.h>
 #include <stdio.h>
 #ifdef STDC_HEADERS
@@ -50,10 +49,11 @@
 #include "sudo_auth.h"
 
 int
-afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
+sudo_afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
 {
     struct ktc_encryptionKey afs_key;
     struct ktc_token afs_token;
+    debug_decl(sudo_afs_verify, SUDO_DEBUG_AUTH)
 
     /* Try to just check the password */
     ka_StringToKey(pass, NULL, &afs_key);
@@ -64,7 +64,7 @@ afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
 			 0,			/* lifetime */
 			 &afs_token,		/* token */
 			 0) == 0)		/* new */
-	return AUTH_SUCCESS;
+	debug_return_int(AUTH_SUCCESS);
 
     /* Fall back on old method XXX - needed? */
     setpag();
@@ -77,7 +77,7 @@ afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
 				   NULL,	/* expiration ptr (unused) */
 				   0,		/* spare */
 				   NULL) == 0)	/* reason */
-	return AUTH_SUCCESS;
+	debug_return_int(AUTH_SUCCESS);
 
-    return AUTH_FAILURE;
+    debug_return_int(AUTH_FAILURE);
 }

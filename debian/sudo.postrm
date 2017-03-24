@@ -8,7 +8,10 @@ case "$1" in
   remove|upgrade|deconfigure)
   ;;
 
-  failed-upgrade)
+  abort-upgrade|failed-upgrade)
+    if [ -e "/etc/sudoers.pre-conffile" ]; then
+	mv /etc/sudoers.pre-conffile /etc/sudoers
+    fi
   ;;
 
   *)

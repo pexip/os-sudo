@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2011 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,7 +17,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 
@@ -30,6 +29,11 @@
 #  include <stdlib.h>
 # endif
 #endif /* STDC_HEADERS */
+#ifdef HAVE_STDBOOL_H
+# include <stdbool.h>
+#else
+# include "compat/stdbool.h"
+#endif /* HAVE_STDBOOL_H */
 #ifdef HAVE_STRING_H
 # if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
 #  include <memory.h>
@@ -51,6 +55,7 @@
 
 #include <pathnames.h>
 #include "sudo_plugin.h"
+#include "sudo_util.h"
 #include "missing.h"
 
 /*
@@ -65,13 +70,6 @@
 # define ROOT_UID       0
 #endif
 
-#undef TRUE
-#define TRUE 1
-#undef FALSE
-#define FALSE 0
-#undef ERROR
-#define ERROR -1
-
 static struct plugin_state {
     char **envp;
     char * const *settings;
@@ -82,7 +80,7 @@ static sudo_printf_t sudo_log;
 static FILE *input, *output;
 static uid_t runas_uid = ROOT_UID;
 static gid_t runas_gid = -1;
-static int use_sudoedit = FALSE;
+static int use_sudoedit = false;
 
 /*
  * Allocate storage for a name=value string and return it.
@@ -113,7 +111,7 @@ fmt_string(const char *var, const char *val)
 static int
 policy_open(unsigned int version, sudo_conv_t conversation,
     sudo_printf_t sudo_printf, char * const settings[],
-    char * const user_info[], char * const user_env[])
+    char * const user_info[], char * const user_env[], char * const args[])
 {
     char * const *ui;
     struct passwd *pw;
@@ -130,7 +128,7 @@ policy_open(unsigned int version, sudo_conv_t conversation,
 	sudo_log(SUDO_CONV_ERROR_MSG,
 	    "the sample plugin requires API version %d.x\n",
 	    SUDO_API_VERSION_MAJOR);
-	return ERROR;
+	return -1;
     }
 
     /* Only allow commands to be run as root. */
@@ -141,15 +139,13 @@ policy_open(unsigned int version, sudo_conv_t conversation,
 	if (strncmp(*ui, "runas_group=", sizeof("runas_group=") - 1) == 0) {
 	    runas_group = *ui + sizeof("runas_group=") - 1;
 	}
-#if !defined(HAVE_GETPROGNAME) && !defined(HAVE___PROGNAME)
 	if (strncmp(*ui, "progname=", sizeof("progname=") - 1) == 0) {
-	    setprogname(*ui + sizeof("progname=") - 1);
+	    initprogname(*ui + sizeof("progname=") - 1);
 	}
-#endif
 	/* Check to see if sudo was called as sudoedit or with -e flag. */
 	if (strncmp(*ui, "sudoedit=", sizeof("sudoedit=") - 1) == 0) {
 	    if (strcasecmp(*ui + sizeof("sudoedit=") - 1, "true") == 0)
-		use_sudoedit = TRUE;
+		use_sudoedit = true;
 	}
 	/* This plugin doesn't support running sudo with no arguments. */
 	if (strncmp(*ui, "implied_shell=", sizeof("implied_shell=") - 1) == 0) {
@@ -229,17 +225,17 @@ check_passwd(void)
     sudo_conv(1, &msg, &repl);
     if (repl.reply == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "missing password\n");
-	return FALSE;
+	return false;
     }
     if (strcmp(repl.reply, "test") != 0) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "incorrect password\n");
-	return FALSE;
+	return false;
     }
-    return TRUE;
+    return true;
 }
 
 static char **
-build_command_info(char *command)
+build_command_info(const char *command)
 {
     static char **command_info;
     int i = 0;
@@ -308,11 +304,15 @@ find_editor(int nfiles, char * const files[], char **argv_out[])
     cp = strtok(editor, " \t");
     if (cp == NULL ||
 	(editor_path = find_in_path(editor, plugin_state.envp)) == NULL) {
+	free(editor);
 	return NULL;
     }
+    if (editor_path != editor)
+	free(editor);
     nargv = (char **) malloc((nargc + 1 + nfiles + 1) * sizeof(char *));
     if (nargv == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "unable to allocate memory\n");
+	free(editor_path);
 	return NULL;
     }
     for (ac = 0; cp != NULL && ac < nargc; ac++) {
@@ -341,30 +341,31 @@ policy_check(int argc, char * const argv[],
 
     if (!argc || argv[0] == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "no command specified\n");
-	return FALSE;
+	return false;
     }
 
     if (!check_passwd())
-	return FALSE;
+	return false;
 
     command = find_in_path(argv[0], plugin_state.envp);
     if (command == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "%s: command not found\n", argv[0]);
-	return FALSE;
+	return false;
     }
 
     /* If "sudo vi" is run, auto-convert to sudoedit.  */
     if (strcmp(command, _PATH_VI) == 0)
-	use_sudoedit = TRUE;
+	use_sudoedit = true;
 
     if (use_sudoedit) {
 	/* Rebuild argv using editor */
+	free(command);
 	command = find_editor(argc - 1, argv + 1, argv_out);
 	if (command == NULL) {
 	    sudo_log(SUDO_CONV_ERROR_MSG, "unable to find valid editor\n");
-	    return ERROR;
+	    return -1;
 	}
-	use_sudoedit = TRUE;
+	use_sudoedit = true;
     } else {
 	/* No changes needd to argv */
 	*argv_out = (char **)argv;
@@ -375,12 +376,13 @@ policy_check(int argc, char * const argv[],
 
     /* Setup command info. */
     *command_info_out = build_command_info(command);
+    free(command);
     if (*command_info_out == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "out of memory\n");
-	return ERROR;
+	return -1;
     }
 
-    return TRUE;
+    return true;
 }
 
 static int
@@ -390,14 +392,14 @@ policy_list(int argc, char * const argv[], int verbose, const char *list_user)
      * List user's capabilities.
      */
     sudo_log(SUDO_CONV_INFO_MSG, "Validated users may run any command\n");
-    return TRUE;
+    return true;
 }
 
 static int
 policy_version(int verbose)
 {
     sudo_log(SUDO_CONV_INFO_MSG, "Sample policy plugin version %s\n", PACKAGE_VERSION);
-    return TRUE;
+    return true;
 }
 
 static void
@@ -424,7 +426,7 @@ static int
 io_open(unsigned int version, sudo_conv_t conversation,
     sudo_printf_t sudo_printf, char * const settings[],
     char * const user_info[], char * const command_info[],
-    int argc, char * const argv[], char * const user_env[])
+    int argc, char * const argv[], char * const user_env[], char * const args[])
 {
     int fd;
     char path[PATH_MAX];
@@ -439,17 +441,17 @@ io_open(unsigned int version, sudo_conv_t conversation,
 	(unsigned int)getpid());
     fd = open(path, O_WRONLY|O_CREAT|O_EXCL, 0644);
     if (fd == -1)
-	return FALSE;
+	return false;
     output = fdopen(fd, "w");
 
     snprintf(path, sizeof(path), "/var/tmp/sample-%u.input",
 	(unsigned int)getpid());
     fd = open(path, O_WRONLY|O_CREAT|O_EXCL, 0644);
     if (fd == -1)
-	return FALSE;
+	return false;
     input = fdopen(fd, "w");
 
-    return TRUE;
+    return true;
 }
 
 static void
@@ -464,21 +466,21 @@ io_version(int verbose)
 {
     sudo_log(SUDO_CONV_INFO_MSG, "Sample I/O plugin version %s\n",
 	PACKAGE_VERSION);
-    return TRUE;
+    return true;
 }
 
 static int
 io_log_input(const char *buf, unsigned int len)
 {
-    fwrite(buf, len, 1, input);
-    return TRUE;
+    ignore_result(fwrite(buf, len, 1, input));
+    return true;
 }
 
 static int
 io_log_output(const char *buf, unsigned int len)
 {
-    fwrite(buf, len, 1, output);
-    return TRUE;
+    ignore_result(fwrite(buf, len, 1, output));
+    return true;
 }
 
 struct policy_plugin sample_policy = {
@@ -490,14 +492,17 @@ struct policy_plugin sample_policy = {
     policy_check,
     policy_list,
     NULL, /* validate */
-    NULL /* invalidate */
+    NULL, /* invalidate */
+    NULL, /* init_session */
+    NULL, /* register_hooks */
+    NULL /* deregister_hooks */
 };
 
 /*
  * Note: This plugin does not differentiate between tty and pipe I/O.
  *       It all gets logged to the same file.
  */
-struct io_plugin sample_io = {
+__dso_public struct io_plugin sample_io = {
     SUDO_IO_PLUGIN,
     SUDO_API_VERSION,
     io_open,
