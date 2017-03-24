@@ -8,7 +8,7 @@ Build-Depends: debhelper (>= 7), libpam0g-dev, libldap2-dev, libsasl2-dev, autot
 Standards-Version: 3.9.2
 Vcs-Git: git://git.gag.com/debian/sudo
 Vcs-Browser: http://git.gag.com/?p=debian/sudo
-XS-Pexip-Upstream: http://archive.ubuntu.com/ubuntu/ precise
+XS-Pexip-Upstream: http://ftp.debian.org/debian/ jessie
 
 Package: sudo
 Architecture: any
