@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,14 +18,7 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
@@ -42,8 +35,8 @@
 
 #define SUDO_ERROR_WRAP 0
 
-#include "missing.h"
-#include "queue.h"
+#include "sudo_compat.h"
+#include "sudo_queue.h"
 #include "parse.h"
 #include "toke.h"
 #include "sudo_plugin.h"
@@ -106,6 +99,10 @@ static struct fill_test args_data[] = {
 static int
 check_fill(const char *input, int len, int addspace, const char *expect, char **resultp)
 {
+    if (sudoerslval.string != NULL) {
+	free(sudoerslval.string);
+	sudoerslval.string = NULL;
+    }
     if (!fill(input, len))
 	return -1;
     *resultp = sudoerslval.string;
@@ -115,6 +112,10 @@ check_fill(const char *input, int len, int addspace, const char *expect, char **
 static int
 check_fill_cmnd(const char *input, int len, int addspace, const char *expect, char **resultp)
 {
+    if (sudoerslval.command.cmnd != NULL) {
+	free(sudoerslval.command.cmnd);
+	sudoerslval.command.cmnd = NULL;
+    }
     if (!fill_cmnd(input, len))
 	return -1;
     *resultp = sudoerslval.command.cmnd;
@@ -124,6 +125,7 @@ check_fill_cmnd(const char *input, int len, int addspace, const char *expect, ch
 static int
 check_fill_args(const char *input, int len, int addspace, const char *expect, char **resultp)
 {
+    /* Must not free old sudoerslval.command.args as gets appended to. */
     if (!fill_args(input, len, addspace))
 	return -1;
     *resultp = sudoerslval.command.args;
@@ -173,13 +175,11 @@ main(int argc, char *argv[])
 
     initprogname(argc > 0 ? argv[0] : "check_fill");
 
-    errors += do_tests(check_fill, txt_data, sizeof(txt_data) / sizeof(txt_data[0]));
-    errors += do_tests(check_fill_cmnd, cmd_data, sizeof(cmd_data) / sizeof(cmd_data[0]));
-    errors += do_tests(check_fill_args, args_data, sizeof(args_data) / sizeof(args_data[0]));
+    errors += do_tests(check_fill, txt_data, nitems(txt_data));
+    errors += do_tests(check_fill_cmnd, cmd_data, nitems(cmd_data));
+    errors += do_tests(check_fill_args, args_data, nitems(args_data));
 
-    ntests = sizeof(txt_data) / sizeof(txt_data[0]) +
-	sizeof(cmd_data) / sizeof(cmd_data[0]) +
-	sizeof(args_data) / sizeof(args_data[0]);
+    ntests = nitems(txt_data) + nitems(cmd_data) + nitems(args_data);
     printf("%s: %d tests run, %d errors, %d%% success rate\n", getprogname(),
 	ntests, errors, (ntests - errors) * 100 / ntests);
 

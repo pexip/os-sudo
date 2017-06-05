@@ -1,6 +1,67 @@
 Notes on upgrading from an older release
 ========================================
 
+o Upgrading from a version prior to 1.8.16:
+
+    When editing files with sudoedit, files in a directory that is
+    writable by the invoking user may no longer be edited by default.
+    Also, sudoedit will refuse to follow a symbolic link in the
+    path to be edited if that directory containing the link is
+    writable by the user.  This behavior can be disabled by negating
+    the sudoedit_checkdir sudoers option, which is now enabled by
+    default.
+
+o Upgrading from a version prior to 1.8.15:
+
+    Prior to version 1.8.15, when env_reset was enabled (the default)
+    and the -s option was not used, the SHELL environment variable
+    was set to the shell of the invoking user.  In 1.8.15 and above,
+    when env_reset is enabled and the -s option is not used, SHELL
+    is set based on the target user.
+
+    When editing files with sudoedit, symbolic links will no longer
+    be followed by default.  The old behavior can be restored by
+    enabling the sudoedit_follow option in sudoers or on a per-command
+    basis with the FOLLOW and NOFOLLOW tags.
+
+    Prior to version 1.8.15, groups listed in sudoers that were not
+    found in the system group database were passed to the group
+    plugin, if any.  Starting with 1.8.15, only groups of the form
+    %:group are resolved via the group plugin by default.  The old
+    behavior can be restored by using the always_query_group_plugin
+    sudoers option.
+
+    Locking of the time stamp file has changed in sudo 1.8.15.
+    Previously, the user's entire time stamp file was locked while
+    retrieving and updating a time stamp record.  Now, only a single
+    record, specific to the tty or parent process ID, is locked.
+    This lock is held while the user enters their password.  If
+    sudo is suspended at the password prompt (or run in the
+    background), the lock is dropped until sudo is resumed, at which
+    point it will be reacquired.  This allows sudo to be used in a
+    pipeline even when a password is required--only one instance
+    of sudo will prompt for a password.
+
+o Upgrading from a version prior to 1.8.14:
+
+    On HP-UX, sudo will no longer check for "plugin.sl" if "plugin.so"
+    is specified but does not exist.  This was a temporary hack for
+    backwards compatibility with Sudo 1.8.6 and below when the
+    plugin path name was not listed in sudo.conf.  A plugin path
+    name that explicitly ends in ".sl" will still work as expected.
+
+o Upgrading from a version prior to 1.8.12:
+
+    On Solaris, sudo is now able to determine the NIS domain name.
+    As a result, if you had previously been using netgroups that
+    do not include the domain, you will need to either set the
+    domain in the entry or leave the domain part of the tuple blank.
+
+    For example, the following will no longer work:
+	my-hosts (foo,-,-) (bar,-,-) (baz,-,-)
+    and should be changed to:
+	my-hosts (foo,-,) (bar,-,) (baz,-,)
+
 o Upgrading from a version prior to 1.8.10:
 
     The time stamp file format has changed in sudo 1.8.10.  There
@@ -10,18 +71,18 @@ o Upgrading from a version prior to 1.8.10:
     authentication users.  On systems that support it, monotonic
     time is stored instead of wall clock time.  As a result, it is
     important that the time stamp files not persist when the system
-    reboots.  For this reason, ther default location for the time
+    reboots.  For this reason, the default location for the time
     stamp files has changed back to a directory located in /var/run.
     Systems that do not have /var/run (e.g. AIX) or that do not clear
     it on boot (e.g. HP-UX) will need to clear the time stamp
-    directory via a startup script.  Such a script is installed by
+    directory via a start up script.  Such a script is installed by
     default on AIX and HP-UX systems.
 
     Because there is now a single time stamp file per user, the -K
     option will remove all of the user's time stamps, not just the
     time stamp for the current terminal.
 
-    Lecture status is now stored separatedly from the time stamps
+    Lecture status is now stored separately from the time stamps
     in a separate directory: /var/db/sudo/lectured, /var/lib/sudo/lectured
     or /var/adm/sudo/lectured depending on what is present on the
     system.
@@ -74,6 +135,10 @@ o Upgrading from a version prior to 1.8.2:
        in sudoers will no longer match "fireflie".  Previously, a
        lookup by name of the group "fireflies" would have matched
        the "fireflie" group on most systems.
+
+    The legacy group matching behavior may be restored by enabling
+    the match_group_by_gid Defaults option in sudoers available
+    in sudo 1.8.18 and higher.
 
 o Upgrading from a version prior to 1.8.1:
 
@@ -128,9 +193,9 @@ o Upgrading from a version prior to 1.8.0:
 
     The sudo.conf file, usually stored in /etc, is used to configure
     plugins.  This file is optional--if no plugins are specified
-    in sudo.conf, the "sudoers" plugin is used.  See the sample.sudo.conf
-    file in the doc directory or refer to the updated sudo manual
-    to see how to configure sudo.conf.
+    in sudo.conf, the "sudoers" plugin is used.  See the example
+    sudo.conf file in the doc directory or refer to the updated
+    sudo manual to see how to configure sudo.conf.
 
     The "askpass" setting has moved from the sudoers file to the
     sudo.conf file.  If you have a sudoers file that uses the

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2012-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,8 +16,8 @@
 
 #include <config.h>
 
-/* Large files not supported by procfs.h */
-#if defined(HAVE_PROCFS_H) || defined(HAVE_SYS_PROCFS_H)
+/* Large files not supported by procfs.h on Solaris. */
+#if defined(HAVE_STRUCT_PSINFO_PR_TTYDEV)
 # undef _FILE_OFFSET_BITS
 # undef _LARGE_FILES
 #endif
@@ -30,50 +30,23 @@
 # include <sys/sysmacros.h>
 #endif
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#ifdef HAVE_DIRENT_H
-# include <dirent.h>
-# define NAMLEN(dirent) strlen((dirent)->d_name)
-#else
-# define dirent direct
-# define NAMLEN(dirent) (dirent)->d_namlen
-# ifdef HAVE_SYS_NDIR_H
-#  include <sys/ndir.h>
-# endif
-# ifdef HAVE_SYS_DIR_H
-#  include <sys/dir.h>
-# endif
-# ifdef HAVE_NDIR_H
-#  include <ndir.h>
-# endif
-#endif
+#include <dirent.h>
 #if defined(HAVE_STRUCT_KINFO_PROC_P_TDEV) || defined (HAVE_STRUCT_KINFO_PROC_KP_EPROC_E_TDEV) || defined(HAVE_STRUCT_KINFO_PROC2_P_TDEV)
-# include <sys/param.h>
+# include <sys/param.h>		/* for makedev/major/minor */
 # include <sys/sysctl.h>
 #elif defined(HAVE_STRUCT_KINFO_PROC_KI_TDEV)
-# include <sys/param.h>
+# include <sys/param.h>		/* for makedev/major/minor */
 # include <sys/sysctl.h>
 # include <sys/user.h>
 #endif
@@ -83,11 +56,17 @@
 # include <sys/procfs.h>
 #endif
 #ifdef HAVE_PSTAT_GETPROC
-# include <sys/param.h>
+# include <sys/param.h>		/* for makedev/major/minor */
 # include <sys/pstat.h>
 #endif
 
 #include "sudo.h"
+
+#if defined(HAVE_STRUCT_DIRENT_D_NAMLEN) && HAVE_STRUCT_DIRENT_D_NAMLEN
+# define NAMLEN(dirent)	(dirent)->d_namlen
+#else
+# define NAMLEN(dirent)	strlen((dirent)->d_name)
+#endif
 
 /*
  * How to access the tty device number in struct kinfo_proc.
@@ -117,48 +96,52 @@
 #if defined(sudo_kp_tdev)
 /*
  * Like ttyname() but uses a dev_t instead of an open fd.
- * Caller is responsible for freeing the returned string.
- * The BSD version uses devname()
+ * Returns name on success and NULL on failure, setting errno.
+ * The BSD version uses devname().
  */
 static char *
-sudo_ttyname_dev(dev_t tdev)
+sudo_ttyname_dev(dev_t tdev, char *name, size_t namelen)
 {
-    char *dev, *tty = NULL;
+    char *dev;
     debug_decl(sudo_ttyname_dev, SUDO_DEBUG_UTIL)
 
     /* Some versions of devname() return NULL on failure, others do not. */
     dev = devname(tdev, S_IFCHR);
     if (dev != NULL && *dev != '?' && *dev != '#') {
-	if (*dev != '/') {
-	    /* devname() doesn't use the /dev/ prefix, add one... */
-	    size_t len = sizeof(_PATH_DEV) + strlen(dev);
-	    tty = emalloc(len);
-	    strlcpy(tty, _PATH_DEV, len);
-	    strlcat(tty, dev, len);
-	} else {
-	    /* Should not happen but just in case... */
-	    tty = estrdup(dev);
-	}
+	if (strlcpy(name, _PATH_DEV, namelen) < namelen &&
+	    strlcat(name, dev, namelen) < namelen)
+	    debug_return_str(name);
+	errno = ERANGE;
+    } else {
+	/* Not all versions of devname() set errno. */
+	errno = ENOENT;
     }
-    debug_return_str(tty);
+    debug_return_str(NULL);
 }
 #elif defined(HAVE__TTYNAME_DEV)
 extern char *_ttyname_dev(dev_t rdev, char *buffer, size_t buflen);
 
 /*
  * Like ttyname() but uses a dev_t instead of an open fd.
- * Caller is responsible for freeing the returned string.
+ * Returns name on success and NULL on failure, setting errno.
  * This version is just a wrapper around _ttyname_dev().
  */
 static char *
-sudo_ttyname_dev(dev_t tdev)
+sudo_ttyname_dev(dev_t tdev, char *name, size_t namelen)
 {
-    char buf[TTYNAME_MAX], *tty;
+    int serrno = errno;
     debug_decl(sudo_ttyname_dev, SUDO_DEBUG_UTIL)
 
-    tty = _ttyname_dev(tdev, buf, sizeof(buf));
+    /*
+     * _ttyname_dev() sets errno to ERANGE if namelen is too small
+     * but does not modify it if tdev is not found.
+     */
+    errno = ENOENT;
+    if (_ttyname_dev(tdev, name, namelen) == NULL)
+	debug_return_str(NULL);
+    errno = serrno;
 
-    debug_return_str(estrdup(tty));
+    debug_return_str(name);
 }
 #elif defined(HAVE_STRUCT_PSINFO_PR_TTYDEV) || defined(HAVE_PSTAT_GETPROC) || defined(__linux__)
 /*
@@ -184,30 +167,30 @@ static char *ignore_devs[] = {
 
 /*
  * Do a breadth-first scan of dir looking for the specified device.
+ * Returns name on success and NULL on failure, setting errno.
  */
 static char *
-sudo_ttyname_scan(const char *dir, dev_t rdev, bool builtin)
+sudo_ttyname_scan(const char *dir, dev_t rdev, bool builtin, char *name, size_t namelen)
 {
-    DIR *d = NULL;
-    char pathbuf[PATH_MAX], **subdirs = NULL, *devname = NULL;
-    size_t sdlen, d_len, len, num_subdirs = 0, max_subdirs = 0;
+    size_t sdlen, num_subdirs = 0, max_subdirs = 0;
+    char pathbuf[PATH_MAX], **subdirs = NULL;
+    char *ret = NULL;
     struct dirent *dp;
-    struct stat sb;
     unsigned int i;
+    DIR *d = NULL;
     debug_decl(sudo_ttyname_scan, SUDO_DEBUG_UTIL)
 
     if (dir[0] == '\0' || (d = opendir(dir)) == NULL)
 	goto done;
 
-    sudo_debug_printf(SUDO_DEBUG_INFO, "scanning for dev %u in %s",
-	(unsigned int)rdev, dir);
+    sudo_debug_printf(SUDO_DEBUG_INFO|SUDO_DEBUG_LINENO,
+	"scanning for dev %u in %s", (unsigned int)rdev, dir);
 
     sdlen = strlen(dir);
     if (dir[sdlen - 1] == '/')
 	sdlen--;
     if (sdlen + 1 >= sizeof(pathbuf)) {
-	errno = ENAMETOOLONG;
-	warning("%.*s/", (int)sdlen, dir);
+	errno = ERANGE;
 	goto done;
     }
     memcpy(pathbuf, dir, sdlen);
@@ -215,6 +198,9 @@ sudo_ttyname_scan(const char *dir, dev_t rdev, bool builtin)
     pathbuf[sdlen] = '\0';
 
     while ((dp = readdir(d)) != NULL) {
+	struct stat sb;
+	size_t d_len, len;
+
 	/* Skip anything starting with "." */
 	if (dp->d_name[0] == '.')
 	    continue;
@@ -248,65 +234,95 @@ sudo_ttyname_scan(const char *dir, dev_t rdev, bool builtin)
 	}
 # if defined(HAVE_STRUCT_DIRENT_D_TYPE) && defined(DTTOIF)
 	/*
-	 * Convert dp->d_type to sb.st_mode to avoid a stat(2) if possible.
-	 * We can't use it for links (since we want to follow them) or
-	 * char devs (since we need st_rdev to compare the device number).
+	 * Avoid excessive stat() calls by checking dp->d_type.
 	 */
-	if (dp->d_type != DT_UNKNOWN && dp->d_type != DT_LNK && dp->d_type != DT_CHR)
-	    sb.st_mode = DTTOIF(dp->d_type);
-	else
-# endif
+	switch (dp->d_type) {
+	    case DT_CHR:
+	    case DT_LNK:
+	    case DT_UNKNOWN:
+		/* Could be a character device, stat() it. */
+		if (stat(pathbuf, &sb) == -1)
+		    continue;
+		break;
+	    case DT_DIR:
+		/* Directory, no need to stat() it. */
+		sb.st_mode = DTTOIF(dp->d_type);
+		sb.st_rdev = 0;		/* quiet ccc-analyzer false positive */
+		break;
+	    default:
+		/* Not a character device, link or directory, skip it. */
+		continue;
+	}
+# else
 	if (stat(pathbuf, &sb) == -1)
 	    continue;
+# endif
 	if (S_ISDIR(sb.st_mode)) {
 	    if (!builtin) {
 		/* Add to list of subdirs to search. */
 		if (num_subdirs + 1 > max_subdirs) {
+		    char **new_subdirs;
+
+		    new_subdirs = reallocarray(subdirs, max_subdirs + 64,
+			sizeof(char *));
+		    if (new_subdirs == NULL)
+			goto done;
+		    subdirs = new_subdirs;
 		    max_subdirs += 64;
-		    subdirs = erealloc3(subdirs, max_subdirs, sizeof(char *));
 		}
-		subdirs[num_subdirs++] = estrdup(pathbuf);
+		subdirs[num_subdirs] = strdup(pathbuf);
+		if (subdirs[num_subdirs] == NULL)
+		    goto done;
+		num_subdirs++;
 	    }
 	    continue;
 	}
 	if (S_ISCHR(sb.st_mode) && sb.st_rdev == rdev) {
-	    devname = estrdup(pathbuf);
-	    sudo_debug_printf(SUDO_DEBUG_INFO, "resolved dev %u as %s",
-		(unsigned int)rdev, pathbuf);
+	    sudo_debug_printf(SUDO_DEBUG_INFO|SUDO_DEBUG_LINENO,
+		"resolved dev %u as %s", (unsigned int)rdev, pathbuf);
+	    if (strlcpy(name, pathbuf, namelen) < namelen) {
+		ret = name;
+	    } else {
+		sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+		    "unable to store %s, have %zu, need %zu",
+		    pathbuf, namelen, strlen(pathbuf) + 1);
+		errno = ERANGE;
+	    }
 	    goto done;
 	}
     }
 
     /* Search subdirs if we didn't find it in the root level. */
-    for (i = 0; devname == NULL && i < num_subdirs; i++)
-	devname = sudo_ttyname_scan(subdirs[i], rdev, false);
+    for (i = 0; ret == NULL && i < num_subdirs; i++)
+	ret = sudo_ttyname_scan(subdirs[i], rdev, false, name, namelen);
 
 done:
     if (d != NULL)
 	closedir(d);
     for (i = 0; i < num_subdirs; i++)
-	efree(subdirs[i]);
-    efree(subdirs);
-    debug_return_str(devname);
+	free(subdirs[i]);
+    free(subdirs);
+    debug_return_str(ret);
 }
 
 /*
  * Like ttyname() but uses a dev_t instead of an open fd.
- * Caller is responsible for freeing the returned string.
+ * Returns name on success and NULL on failure, setting errno.
  * Generic version.
  */
 static char *
-sudo_ttyname_dev(dev_t rdev)
+sudo_ttyname_dev(dev_t rdev, char *name, size_t namelen)
 {
+    char buf[PATH_MAX], **sd, *devname;
+    char *ret = NULL;
     struct stat sb;
     size_t len;
-    char buf[PATH_MAX], **sd, *devname, *tty = NULL;
     debug_decl(sudo_ttyname_dev, SUDO_DEBUG_UTIL)
 
     /*
      * First check search_devs for common tty devices.
      */
-    for (sd = search_devs; tty == NULL && (devname = *sd) != NULL; sd++) {
+    for (sd = search_devs; (devname = *sd) != NULL; sd++) {
 	len = strlen(devname);
 	if (devname[len - 1] == '/') {
 	    if (strcmp(devname, "/dev/pts/") == 0) {
@@ -314,19 +330,34 @@ sudo_ttyname_dev(dev_t rdev)
 		(void)snprintf(buf, sizeof(buf), "%spts/%u", _PATH_DEV,
 		    (unsigned int)minor(rdev));
 		if (stat(buf, &sb) == 0) {
-		    if (S_ISCHR(sb.st_mode) && sb.st_rdev == rdev)
-			tty = estrdup(buf);
+		    if (S_ISCHR(sb.st_mode) && sb.st_rdev == rdev) {
+			sudo_debug_printf(SUDO_DEBUG_INFO|SUDO_DEBUG_LINENO,
+			    "comparing dev %u to %s: match!",
+			    (unsigned int)rdev, buf);
+			if (strlcpy(name, buf, namelen) < namelen)
+			    ret = name;
+			else
+			    errno = ERANGE;
+			goto done;
+		    }
 		}
-		sudo_debug_printf(SUDO_DEBUG_INFO, "comparing dev %u to %s: %s",
-		    (unsigned int)rdev, buf, tty ? "yes" : "no");
+		sudo_debug_printf(SUDO_DEBUG_INFO|SUDO_DEBUG_LINENO,
+		    "comparing dev %u to %s: no", (unsigned int)rdev, buf);
 	    } else {
 		/* Traverse directory */
-		tty = sudo_ttyname_scan(devname, rdev, true);
+		ret = sudo_ttyname_scan(devname, rdev, true, name, namelen);
+		if (ret != NULL || errno == ENOMEM)
+		    goto done;
 	    }
 	} else {
 	    if (stat(devname, &sb) == 0) {
-		if (S_ISCHR(sb.st_mode) && sb.st_rdev == rdev)
-		    tty = estrdup(devname);
+		if (S_ISCHR(sb.st_mode) && sb.st_rdev == rdev) {
+		    if (strlcpy(name, devname, namelen) < namelen)
+			ret = name;
+		    else
+			errno = ERANGE;
+		    goto done;
+		}
 	    }
 	}
     }
@@ -334,25 +365,25 @@ sudo_ttyname_dev(dev_t rdev)
     /*
      * Not found?  Do a breadth-first traversal of /dev/.
      */
-    if (tty == NULL)
-	tty = sudo_ttyname_scan(_PATH_DEV, rdev, false);
+    ret = sudo_ttyname_scan(_PATH_DEV, rdev, false, name, namelen);
 
-    debug_return_str(tty);
+done:
+    debug_return_str(ret);
 }
 #endif
 
 #if defined(sudo_kp_tdev)
 /*
- * Return a string from ttyname() containing the tty to which the process is
- * attached or NULL if the process has no controlling tty.
+ * Store the name of the tty to which the process is attached in name.
+ * Returns name on success and NULL on failure, setting errno.
  */
 char *
-get_process_ttyname(void)
+get_process_ttyname(char *name, size_t namelen)
 {
-    char *tty = NULL;
     struct sudo_kinfo_proc *ki_proc = NULL;
     size_t size = sizeof(*ki_proc);
-    int mib[6], rc;
+    int mib[6], rc, serrno = errno;
+    char *ret = NULL;
     debug_decl(get_process_ttyname, SUDO_DEBUG_UTIL)
 
     /*
@@ -366,39 +397,47 @@ get_process_ttyname(void)
     mib[4] = sizeof(*ki_proc);
     mib[5] = 1;
     do {
+	struct sudo_kinfo_proc *kp;
+
 	size += size / 10;
-	ki_proc = erealloc(ki_proc, size);
+	if ((kp = realloc(ki_proc, size)) == NULL) {
+	    rc = -1;
+	    break;		/* really out of memory. */
+	}
+	ki_proc = kp;
 	rc = sysctl(mib, sudo_kp_namelen, ki_proc, &size, NULL, 0);
     } while (rc == -1 && errno == ENOMEM);
+    errno = ENOENT;
     if (rc != -1) {
 	if ((dev_t)ki_proc->sudo_kp_tdev != (dev_t)-1) {
-	    tty = sudo_ttyname_dev(ki_proc->sudo_kp_tdev);
-	    if (tty == NULL) {
-		sudo_debug_printf(SUDO_DEBUG_WARN,
+	    errno = serrno;
+	    ret = sudo_ttyname_dev(ki_proc->sudo_kp_tdev, name, namelen);
+	    if (ret == NULL) {
+		sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
 		    "unable to map device number %u to name",
 		    ki_proc->sudo_kp_tdev);
 	    }
 	}
     } else {
-	sudo_debug_printf(SUDO_DEBUG_WARN,
-	    "unable to resolve tty via KERN_PROC: %s", strerror(errno));
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to resolve tty via KERN_PROC");
     }
-    efree(ki_proc);
+    free(ki_proc);
 
-    debug_return_str(tty);
+    debug_return_str(ret);
 }
 #elif defined(HAVE_STRUCT_PSINFO_PR_TTYDEV)
 /*
- * Return a string from ttyname() containing the tty to which the process is
- * attached or NULL if the process has no controlling tty.
+ * Store the name of the tty to which the process is attached in name.
+ * Returns name on success and NULL on failure, setting errno.
  */
 char *
-get_process_ttyname(void)
+get_process_ttyname(char *name, size_t namelen)
 {
-    char path[PATH_MAX], *tty = NULL;
+    char path[PATH_MAX], *ret = NULL;
     struct psinfo psinfo;
     ssize_t nread;
-    int fd;
+    int fd, serrno = errno;
     debug_decl(get_process_ttyname, SUDO_DEBUG_UTIL)
 
     /* Try to determine the tty from pr_ttydev in /proc/pid/psinfo. */
@@ -409,26 +448,37 @@ get_process_ttyname(void)
 	if (nread == (ssize_t)sizeof(psinfo)) {
 	    dev_t rdev = (dev_t)psinfo.pr_ttydev;
 #if defined(_AIX) && defined(DEVNO64)
-	    if (psinfo.pr_ttydev & DEVNO64)
+	    if ((psinfo.pr_ttydev & DEVNO64) && sizeof(dev_t) == 4)
 		rdev = makedev(major64(psinfo.pr_ttydev), minor64(psinfo.pr_ttydev));
 #endif
-	    if (rdev != (dev_t)-1)
-		tty = sudo_ttyname_dev(rdev);
+	    if (rdev != (dev_t)-1) {
+		errno = serrno;
+		ret = sudo_ttyname_dev(rdev, name, namelen);
+		goto done;
+	    }
 	}
     }
+    errno = ENOENT;
 
-    debug_return_str(tty);
+done:
+    if (ret == NULL)
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to resolve tty via %s", path);
+
+    debug_return_str(ret);
 }
 #elif defined(__linux__)
 /*
- * Return a string from ttyname() containing the tty to which the process is
- * attached or NULL if the process has no controlling tty.
+ * Store the name of the tty to which the process is attached in name.
+ * Returns name on success and NULL on failure, setting errno.
  */
 char *
-get_process_ttyname(void)
+get_process_ttyname(char *name, size_t namelen)
 {
-    char path[PATH_MAX], *line = NULL, *tty = NULL;
+    char path[PATH_MAX], *line = NULL;
+    char *ret = NULL;
     size_t linesize = 0;
+    int serrno = errno;
     ssize_t len;
     FILE *fp;
     debug_decl(get_process_ttyname, SUDO_DEBUG_UTIL)
@@ -453,30 +503,39 @@ get_process_ttyname(void)
 			    sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
 				"%s: tty device %s: %s", path, cp, errstr);
 			}
-			if (tdev > 0)
-			    tty = sudo_ttyname_dev(tdev);
+			if (tdev > 0) {
+			    errno = serrno;
+			    ret = sudo_ttyname_dev(tdev, name, namelen);
+			    goto done;
+			}
 			break;
 		    }
 		    cp = ep + 1;
 		}
 	    }
 	}
-	efree(line);
     }
+    errno = ENOENT;
 
-    debug_return_str(tty);
+done:
+    free(line);
+    if (ret == NULL)
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to resolve tty via %s", path);
+
+    debug_return_str(ret);
 }
 #elif defined(HAVE_PSTAT_GETPROC)
 /*
- * Return a string from ttyname() containing the tty to which the process is
- * attached or NULL if the process has no controlling tty.
+ * Store the name of the tty to which the process is attached in name.
+ * Returns name on success and NULL on failure, setting errno.
  */
 char *
-get_process_ttyname(void)
+get_process_ttyname(char *name, size_t namelen)
 {
     struct pst_status pstat;
-    char *tty = NULL;
-    int rc;
+    char *ret = NULL;
+    int rc, serrno = errno;
     debug_decl(get_process_ttyname, SUDO_DEBUG_UTIL)
 
     /*
@@ -486,19 +545,28 @@ get_process_ttyname(void)
     rc = pstat_getproc(&pstat, sizeof(pstat), (size_t)0, (int)getpid());
     if (rc != -1 || errno == EOVERFLOW) {
 	if (pstat.pst_term.psd_major != -1 && pstat.pst_term.psd_minor != -1) {
-	    tty = sudo_ttyname_dev(makedev(pstat.pst_term.psd_major,
-		pstat.pst_term.psd_minor));
+	    errno = serrno;
+	    ret = sudo_ttyname_dev(makedev(pstat.pst_term.psd_major,
+		pstat.pst_term.psd_minor), name, namelen);
+	    goto done;
 	}
     }
-    debug_return_str(tty);
+    errno = ENOENT;
+
+done:
+    if (ret == NULL)
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to resolve tty via pstat");
+
+    debug_return_str(ret);
 }
 #else
 /*
- * Return a string from ttyname() containing the tty to which the process is
- * attached or NULL if the process has no controlling tty.
+ * Store the name of the tty to which the process is attached in name.
+ * Returns name on success and NULL on failure, setting errno.
  */
 char *
-get_process_ttyname(void)
+get_process_ttyname(char *name, size_t namelen)
 {
     char *tty;
     debug_decl(get_process_ttyname, SUDO_DEBUG_UTIL)
@@ -507,7 +575,18 @@ get_process_ttyname(void)
 	if ((tty = ttyname(STDOUT_FILENO)) == NULL)
 	    tty = ttyname(STDERR_FILENO);
     }
+    if (tty != NULL) {
+	if (strlcpy(name, tty, namelen) < namelen)
+	    debug_return_str(name);
+	errno = ERANGE;
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to store tty from ttyname");
+    } else {
+	sudo_debug_printf(SUDO_DEBUG_WARN|SUDO_DEBUG_LINENO|SUDO_DEBUG_ERRNO,
+	    "unable to resolve tty via ttyname");
+	errno = ENOENT;
+    }
 
-    debug_return_str(estrdup(tty));
+    debug_return_str(NULL);
 }
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2013
+ * Copyright (c) 1996, 1998-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -23,29 +23,19 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
+#include <stddef.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #ifdef HAVE_SETAUTHDB
 # include <usersec.h>
 #endif /* HAVE_SETAUTHDB */
+#include <errno.h>
 #include <pwd.h>
 #include <grp.h>
 
@@ -58,13 +48,25 @@
  */
 static struct rbtree *pwcache_byuid, *pwcache_byname;
 static struct rbtree *grcache_bygid, *grcache_byname;
-static struct rbtree *grlist_cache;
+static struct rbtree *gidlist_cache, *grlist_cache;
 
 static int  cmp_pwuid(const void *, const void *);
 static int  cmp_pwnam(const void *, const void *);
 static int  cmp_grgid(const void *, const void *);
 
 #define cmp_grnam	cmp_pwnam
+
+/*
+ * AIX has the concept of authentication registries (files, NIS, LDAP, etc).
+ * This allows you to have separate ID <-> name mappings based on which
+ * authentication registries the user was looked up in.
+ * We store the registry as part of the key and use it when matching.
+ */
+#ifdef HAVE_SETAUTHDB
+# define getauthregistry(u, r)	aix_getauthregistry((u), (r))
+#else
+# define getauthregistry(u, r)	((r)[0] = '\0')
+#endif
 
 /*
  * Compare by uid.
@@ -74,6 +76,8 @@ cmp_pwuid(const void *v1, const void *v2)
 {
     const struct cache_item *ci1 = (const struct cache_item *) v1;
     const struct cache_item *ci2 = (const struct cache_item *) v2;
+    if (ci1->k.uid == ci2->k.uid)
+	return strcmp(ci1->registry, ci2->registry);
     return ci1->k.uid - ci2->k.uid;
 }
 
@@ -85,13 +89,16 @@ cmp_pwnam(const void *v1, const void *v2)
 {
     const struct cache_item *ci1 = (const struct cache_item *) v1;
     const struct cache_item *ci2 = (const struct cache_item *) v2;
-    return strcmp(ci1->k.name, ci2->k.name);
+    int ret = strcmp(ci1->k.name, ci2->k.name);
+    if (ret == 0)
+	ret = strcmp(ci1->registry, ci2->registry);
+    return ret;
 }
 
 void
 sudo_pw_addref(struct passwd *pw)
 {
-    debug_decl(sudo_pw_addref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_pw_addref, SUDOERS_DEBUG_NSS)
     ptr_to_item(pw)->refcnt++;
     debug_return;
 }
@@ -100,10 +107,10 @@ static void
 sudo_pw_delref_item(void *v)
 {
     struct cache_item *item = v;
-    debug_decl(sudo_pw_delref_item, SUDO_DEBUG_NSS)
+    debug_decl(sudo_pw_delref_item, SUDOERS_DEBUG_NSS)
 
     if (--item->refcnt == 0)
-	efree(item);
+	free(item);
 
     debug_return;
 }
@@ -111,7 +118,7 @@ sudo_pw_delref_item(void *v)
 void
 sudo_pw_delref(struct passwd *pw)
 {
-    debug_decl(sudo_pw_delref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_pw_delref, SUDOERS_DEBUG_NSS)
     sudo_pw_delref_item(ptr_to_item(pw));
     debug_return;
 }
@@ -124,33 +131,65 @@ sudo_getpwuid(uid_t uid)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    debug_decl(sudo_getpwuid, SUDO_DEBUG_NSS)
+    debug_decl(sudo_getpwuid, SUDOERS_DEBUG_NSS)
+
+    if (pwcache_byuid == NULL) {
+	pwcache_byuid = rbcreate(cmp_pwuid);
+	if (pwcache_byuid == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
 
     key.k.uid = uid;
+    getauthregistry(IDtouser(uid), key.registry);
     if ((node = rbfind(pwcache_byuid, &key)) != NULL) {
-	item = (struct cache_item *) node->data;
+	item = node->data;
 	goto done;
     }
     /*
      * Cache passwd db entry if it exists or a negative response if not.
      */
 #ifdef HAVE_SETAUTHDB
-    aix_setauthdb(IDtouser(uid));
+    aix_setauthdb(IDtouser(uid), key.registry);
 #endif
     item = sudo_make_pwitem(uid, NULL);
+#ifdef HAVE_SETAUTHDB
+    aix_restoreauthdb();
+#endif
     if (item == NULL) {
-	item = ecalloc(1, sizeof(*item));
+	if (errno != ENOENT || (item = calloc(1, sizeof(*item))) == NULL) {
+	    sudo_warnx(U_("unable to cache uid %u, out of memory"),
+		(unsigned int) uid);
+	    debug_return_ptr(NULL);
+	}
 	item->refcnt = 1;
 	item->k.uid = uid;
 	/* item->d.pw = NULL; */
     }
-    if (rbinsert(pwcache_byuid, item) != NULL)
-	fatalx(U_("unable to cache uid %u, already exists"),
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(pwcache_byuid, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache uid %u, already exists"),
 	    (unsigned int) uid);
-#ifdef HAVE_SETAUTHDB
-    aix_restoreauthdb();
-#endif
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache uid %u, out of memory"),
+	    (unsigned int) uid);
+	item->refcnt = 0;
+	break;
+    }
 done:
+    if (item->refcnt != 0) {
+	sudo_debug_printf(SUDO_DEBUG_DEBUG,
+	    "%s: uid %u [%s] -> user %s [%s] (%s)", __func__,
+	    (unsigned int)uid, key.registry,
+	    item->d.pw ? item->d.pw->pw_name : "unknown",
+	    item->registry, node ? "cache hit" : "cached");
+    }
     item->refcnt++;
     debug_return_ptr(item->d.pw);
 }
@@ -163,35 +202,63 @@ sudo_getpwnam(const char *name)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    size_t len;
-    debug_decl(sudo_getpwnam, SUDO_DEBUG_NSS)
+    debug_decl(sudo_getpwnam, SUDOERS_DEBUG_NSS)
+
+    if (pwcache_byname == NULL) {
+	pwcache_byname = rbcreate(cmp_pwnam);
+	if (pwcache_byname == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
 
     key.k.name = (char *) name;
+    getauthregistry((char *) name, key.registry);
     if ((node = rbfind(pwcache_byname, &key)) != NULL) {
-	item = (struct cache_item *) node->data;
+	item = node->data;
 	goto done;
     }
     /*
      * Cache passwd db entry if it exists or a negative response if not.
      */
 #ifdef HAVE_SETAUTHDB
-    aix_setauthdb((char *) name);
+    aix_setauthdb((char *) name, key.registry);
 #endif
     item = sudo_make_pwitem((uid_t)-1, name);
+#ifdef HAVE_SETAUTHDB
+    aix_restoreauthdb();
+#endif
     if (item == NULL) {
-	len = strlen(name) + 1;
-	item = ecalloc(1, sizeof(*item) + len);
+	const size_t len = strlen(name) + 1;
+	if (errno != ENOENT || (item = calloc(1, sizeof(*item) + len)) == NULL) {
+	    sudo_warnx(U_("unable to cache user %s, out of memory"), name);
+	    debug_return_ptr(NULL);
+	}
 	item->refcnt = 1;
 	item->k.name = (char *) item + sizeof(*item);
 	memcpy(item->k.name, name, len);
 	/* item->d.pw = NULL; */
     }
-    if (rbinsert(pwcache_byname, item) != NULL)
-	fatalx(U_("unable to cache user %s, already exists"), name);
-#ifdef HAVE_SETAUTHDB
-    aix_restoreauthdb();
-#endif
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(pwcache_byname, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache user %s, already exists"), name);
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache user %s, out of memory"), name);
+	item->refcnt = 0;
+	break;
+    }
 done:
+    if (item->refcnt != 0) {
+	sudo_debug_printf(SUDO_DEBUG_DEBUG,
+	    "%s: user %s [%s] -> uid %d [%s] (%s)", __func__, name,
+	    key.registry, item->d.pw ? (int)item->d.pw->pw_uid : -1,
+	    item->registry, node ? "cache hit" : "cached");
+    }
     item->refcnt++;
     debug_return_ptr(item->d.pw);
 }
@@ -205,17 +272,30 @@ sudo_mkpwent(const char *user, uid_t uid, gid_t gid, const char *home,
     const char *shell)
 {
     struct cache_item_pw *pwitem;
+    struct cache_item *item;
     struct passwd *pw;
-    struct rbnode *node;
     size_t len, name_len, home_len, shell_len;
     int i;
-    debug_decl(sudo_mkpwent, SUDO_DEBUG_NSS)
+    debug_decl(sudo_mkpwent, SUDOERS_DEBUG_NSS)
+
+    if (pwcache_byuid == NULL)
+	pwcache_byuid = rbcreate(cmp_pwuid);
+    if (pwcache_byname == NULL)
+	pwcache_byname = rbcreate(cmp_pwnam);
+    if (pwcache_byuid == NULL || pwcache_byname == NULL) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	debug_return_ptr(NULL);
+    }
 
     /* Optional arguments. */
     if (home == NULL)
 	home = "/";
     if (shell == NULL)
 	shell = _PATH_BSHELL;
+
+    sudo_debug_printf(SUDO_DEBUG_DEBUG,
+	"%s: creating and caching passwd struct for %s:%u:%u:%s:%s", __func__,
+	user, (unsigned int)uid, (unsigned int)gid, home, shell);
 
     name_len = strlen(user);
     home_len = strlen(home);
@@ -225,7 +305,14 @@ sudo_mkpwent(const char *user, uid_t uid, gid_t gid, const char *home,
 	home_len + 1 /* pw_dir */ + shell_len + 1 /* pw_shell */;
 
     for (i = 0; i < 2; i++) {
-	pwitem = ecalloc(1, len);
+	struct rbtree *pwcache;
+	struct rbnode *node;
+
+	pwitem = calloc(1, len);
+	if (pwitem == NULL) {
+	    sudo_warnx(U_("unable to cache user %s, out of memory"), user);
+	    debug_return_ptr(NULL);
+	}
 	pw = &pwitem->pw;
 	pw->pw_uid = uid;
 	pw->pw_gid = gid;
@@ -240,28 +327,41 @@ sudo_mkpwent(const char *user, uid_t uid, gid_t gid, const char *home,
 	pw->pw_shell = pw->pw_dir + home_len + 1;
 	memcpy(pw->pw_shell, shell, shell_len + 1);
 
-	pwitem->cache.refcnt = 1;
-	pwitem->cache.d.pw = pw;
+	item = &pwitem->cache;
+	item->refcnt = 1;
+	item->d.pw = pw;
 	if (i == 0) {
-	    /* Store by uid if it doesn't already exist. */
-	    pwitem->cache.k.uid = pw->pw_uid;
-	    if ((node = rbinsert(pwcache_byuid, &pwitem->cache)) != NULL) {
-		/* Already exists, free the item we created. */
-		efree(pwitem);
-		pwitem = (struct cache_item_pw *) node->data;
-	    }
+	    /* Store by uid. */
+	    item->k.uid = pw->pw_uid;
+	    pwcache = pwcache_byuid;
 	} else {
-	    /* Store by name if it doesn't already exist. */
-	    pwitem->cache.k.name = pw->pw_name;
-	    if ((node = rbinsert(pwcache_byname, &pwitem->cache)) != NULL) {
-		/* Already exists, free the item we created. */
-		efree(pwitem);
-		pwitem = (struct cache_item_pw *) node->data;
+	    /* Store by name. */
+	    item->k.name = pw->pw_name;
+	    pwcache = pwcache_byname;
+	}
+	getauthregistry(NULL, item->registry);
+	switch (rbinsert(pwcache, item, &node)) {
+	case 1:
+	    /* Already exists. */
+	    item = node->data;
+	    if (item->d.pw == NULL) {
+		/* Negative cache entry, replace with ours. */
+		sudo_pw_delref_item(item);
+		item = node->data = &pwitem->cache;
+	    } else {
+		/* Good entry, discard our fake one. */
+		free(pwitem);
 	    }
+	    break;
+	case -1:
+	    /* can't cache item, just return it */
+	    sudo_warnx(U_("unable to cache user %s, out of memory"), user);
+	    item->refcnt = 0;
+	    break;
 	}
     }
-    pwitem->cache.refcnt++;
-    debug_return_ptr(&pwitem->pw);
+    item->refcnt++;
+    debug_return_ptr(item->d.pw);
 }
 
 /*
@@ -272,11 +372,11 @@ sudo_fakepwnam(const char *user, gid_t gid)
 {
     const char *errstr;
     uid_t uid;
-    debug_decl(sudo_fakepwnam, SUDO_DEBUG_NSS)
+    debug_decl(sudo_fakepwnam, SUDOERS_DEBUG_NSS)
 
-    uid = (uid_t) atoid(user + 1, NULL, NULL, &errstr);
+    uid = (uid_t) sudo_strtoid(user + 1, NULL, NULL, &errstr);
     if (errstr != NULL) {
-	sudo_debug_printf(SUDO_DEBUG_DEBUG|SUDO_DEBUG_DIAG,
+	sudo_debug_printf(SUDO_DEBUG_DIAG|SUDO_DEBUG_LINENO,
 	    "uid %s %s", user, errstr);
 	debug_return_ptr(NULL);
     }
@@ -284,23 +384,9 @@ sudo_fakepwnam(const char *user, gid_t gid)
 }
 
 void
-sudo_setpwent(void)
-{
-    debug_decl(sudo_setpwent, SUDO_DEBUG_NSS)
-
-    setpwent();
-    if (pwcache_byuid == NULL)
-	pwcache_byuid = rbcreate(cmp_pwuid);
-    if (pwcache_byname == NULL)
-	pwcache_byname = rbcreate(cmp_pwnam);
-
-    debug_return;
-}
-
-void
 sudo_freepwcache(void)
 {
-    debug_decl(sudo_freepwcache, SUDO_DEBUG_NSS)
+    debug_decl(sudo_freepwcache, SUDOERS_DEBUG_NSS)
 
     if (pwcache_byuid != NULL) {
 	rbdestroy(pwcache_byuid, sudo_pw_delref_item);
@@ -314,17 +400,6 @@ sudo_freepwcache(void)
     debug_return;
 }
 
-void
-sudo_endpwent(void)
-{
-    debug_decl(sudo_endpwent, SUDO_DEBUG_NSS)
-
-    endpwent();
-    sudo_freepwcache();
-
-    debug_return;
-}
-
 /*
  * Compare by gid.
  */
@@ -333,13 +408,15 @@ cmp_grgid(const void *v1, const void *v2)
 {
     const struct cache_item *ci1 = (const struct cache_item *) v1;
     const struct cache_item *ci2 = (const struct cache_item *) v2;
+    if (ci1->k.gid == ci2->k.gid)
+	return strcmp(ci1->registry, ci2->registry);
     return ci1->k.gid - ci2->k.gid;
 }
 
 void
 sudo_gr_addref(struct group *gr)
 {
-    debug_decl(sudo_gr_addref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_gr_addref, SUDOERS_DEBUG_NSS)
     ptr_to_item(gr)->refcnt++;
     debug_return;
 }
@@ -348,10 +425,10 @@ static void
 sudo_gr_delref_item(void *v)
 {
     struct cache_item *item = v;
-    debug_decl(sudo_gr_delref_item, SUDO_DEBUG_NSS)
+    debug_decl(sudo_gr_delref_item, SUDOERS_DEBUG_NSS)
 
     if (--item->refcnt == 0)
-	efree(item);
+	free(item);
 
     debug_return;
 }
@@ -359,7 +436,7 @@ sudo_gr_delref_item(void *v)
 void
 sudo_gr_delref(struct group *gr)
 {
-    debug_decl(sudo_gr_delref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_gr_delref, SUDOERS_DEBUG_NSS)
     sudo_gr_delref_item(ptr_to_item(gr));
     debug_return;
 }
@@ -372,11 +449,20 @@ sudo_getgrgid(gid_t gid)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    debug_decl(sudo_getgrgid, SUDO_DEBUG_NSS)
+    debug_decl(sudo_getgrgid, SUDOERS_DEBUG_NSS)
+
+    if (grcache_bygid == NULL) {
+	grcache_bygid = rbcreate(cmp_grgid);
+	if (grcache_bygid == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
 
     key.k.gid = gid;
+    getauthregistry(NULL, key.registry);
     if ((node = rbfind(grcache_bygid, &key)) != NULL) {
-	item = (struct cache_item *) node->data;
+	item = node->data;
 	goto done;
     }
     /*
@@ -384,15 +470,38 @@ sudo_getgrgid(gid_t gid)
      */
     item = sudo_make_gritem(gid, NULL);
     if (item == NULL) {
-	item = ecalloc(1, sizeof(*item));
+	if (errno != ENOENT || (item = calloc(1, sizeof(*item))) == NULL) {
+	    sudo_warnx(U_("unable to cache gid %u, out of memory"),
+		(unsigned int) gid);
+	    debug_return_ptr(NULL);
+	}
 	item->refcnt = 1;
 	item->k.gid = gid;
 	/* item->d.gr = NULL; */
     }
-    if (rbinsert(grcache_bygid, item) != NULL)
-	fatalx(U_("unable to cache gid %u, already exists"),
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(grcache_bygid, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache gid %u, already exists"),
 	    (unsigned int) gid);
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache gid %u, out of memory"),
+	    (unsigned int) gid);
+	item->refcnt = 0;
+	break;
+    }
 done:
+    if (item->refcnt != 0) {
+	sudo_debug_printf(SUDO_DEBUG_DEBUG,
+	    "%s: gid %u [%s] -> group %s [%s] (%s)", __func__,
+	    (unsigned int)gid, key.registry,
+	    item->d.gr ? item->d.gr->gr_name : "unknown",
+	    item->registry, node ? "cache hit" : "cached");
+    }
     item->refcnt++;
     debug_return_ptr(item->d.gr);
 }
@@ -405,12 +514,20 @@ sudo_getgrnam(const char *name)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    size_t len;
-    debug_decl(sudo_getgrnam, SUDO_DEBUG_NSS)
+    debug_decl(sudo_getgrnam, SUDOERS_DEBUG_NSS)
+
+    if (grcache_byname == NULL) {
+	grcache_byname = rbcreate(cmp_grnam);
+	if (grcache_byname == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
 
     key.k.name = (char *) name;
+    getauthregistry(NULL, key.registry);
     if ((node = rbfind(grcache_byname, &key)) != NULL) {
-	item = (struct cache_item *) node->data;
+	item = node->data;
 	goto done;
     }
     /*
@@ -418,16 +535,36 @@ sudo_getgrnam(const char *name)
      */
     item = sudo_make_gritem((gid_t)-1, name);
     if (item == NULL) {
-	len = strlen(name) + 1;
-	item = ecalloc(1, sizeof(*item) + len);
+	const size_t len = strlen(name) + 1;
+	if (errno != ENOENT || (item = calloc(1, sizeof(*item) + len)) == NULL) {
+	    sudo_warnx(U_("unable to cache group %s, out of memory"), name);
+	    debug_return_ptr(NULL);
+	}
 	item->refcnt = 1;
 	item->k.name = (char *) item + sizeof(*item);
 	memcpy(item->k.name, name, len);
 	/* item->d.gr = NULL; */
     }
-    if (rbinsert(grcache_byname, item) != NULL)
-	fatalx(U_("unable to cache group %s, already exists"), name);
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(grcache_byname, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache group %s, already exists"), name);
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache group %s, out of memory"), name);
+	item->refcnt = 0;
+	break;
+    }
 done:
+    if (item->refcnt != 0) {
+	sudo_debug_printf(SUDO_DEBUG_DEBUG,
+	    "%s: group %s [%s] -> gid %d [%s] (%s)", __func__, name,
+	    key.registry, item->d.gr ? (int)item->d.gr->gr_gid : -1,
+	    item->registry, node ? "cache hit" : "cached");
+    }
     item->refcnt++;
     debug_return_ptr(item->d.gr);
 }
@@ -439,57 +576,114 @@ struct group *
 sudo_fakegrnam(const char *group)
 {
     struct cache_item_gr *gritem;
+    struct cache_item *item;
     const char *errstr;
     struct group *gr;
-    struct rbnode *node;
     size_t len, name_len;
     int i;
-    debug_decl(sudo_fakegrnam, SUDO_DEBUG_NSS)
+    debug_decl(sudo_fakegrnam, SUDOERS_DEBUG_NSS)
+
+    if (grcache_bygid == NULL)
+	grcache_bygid = rbcreate(cmp_grgid);
+    if (grcache_byname == NULL)
+	grcache_byname = rbcreate(cmp_grnam);
+    if (grcache_bygid == NULL || grcache_byname == NULL) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	debug_return_ptr(NULL);
+    }
 
     name_len = strlen(group);
     len = sizeof(*gritem) + name_len + 1;
 
     for (i = 0; i < 2; i++) {
-	gritem = ecalloc(1, len);
+	struct rbtree *grcache;
+	struct rbnode *node;
+
+	gritem = calloc(1, len);
+	if (gritem == NULL) {
+	    sudo_warnx(U_("unable to cache group %s, out of memory"), group);
+	    debug_return_ptr(NULL);
+	}
 	gr = &gritem->gr;
-	gr->gr_gid = (gid_t) atoid(group + 1, NULL, NULL, &errstr);
+	gr->gr_gid = (gid_t) sudo_strtoid(group + 1, NULL, NULL, &errstr);
 	gr->gr_name = (char *)(gritem + 1);
 	memcpy(gr->gr_name, group, name_len + 1);
 	if (errstr != NULL) {
-	    sudo_debug_printf(SUDO_DEBUG_DEBUG|SUDO_DEBUG_DIAG,
+	    sudo_debug_printf(SUDO_DEBUG_DIAG|SUDO_DEBUG_LINENO,
 		"gid %s %s", group, errstr);
-	    efree(gritem);
+	    free(gritem);
 	    debug_return_ptr(NULL);
 	}
 
-	gritem->cache.refcnt = 1;
-	gritem->cache.d.gr = gr;
+	item = &gritem->cache;
+	item->refcnt = 1;
+	item->d.gr = gr;
 	if (i == 0) {
 	    /* Store by gid if it doesn't already exist. */
-	    gritem->cache.k.gid = gr->gr_gid;
-	    if ((node = rbinsert(grcache_bygid, &gritem->cache)) != NULL) {
-		/* Already exists, free the item we created. */
-		efree(gritem);
-		gritem = (struct cache_item_gr *) node->data;
-	    }
+	    item->k.gid = gr->gr_gid;
+	    grcache = grcache_bygid;
 	} else {
 	    /* Store by name, overwriting cached version. */
 	    gritem->cache.k.name = gr->gr_name;
-	    if ((node = rbinsert(grcache_byname, &gritem->cache)) != NULL) {
-		/* Already exists, free the item we created. */
-		efree(gritem);
-		gritem = (struct cache_item_gr *) node->data;
+	    grcache = grcache_byname;
+	}
+	getauthregistry(NULL, item->registry);
+	switch (rbinsert(grcache, item, &node)) {
+	case 1:
+	    /* Already exists. */
+	    item = node->data;
+	    if (item->d.gr == NULL) {
+		/* Negative cache entry, replace with ours. */
+		sudo_gr_delref_item(item);
+		item = node->data = &gritem->cache;
+	    } else {
+		/* Good entry, discard our fake one. */
+		free(gritem);
 	    }
+	    break;
+	case -1:
+	    /* can't cache item, just return it */
+	    sudo_warnx(U_("unable to cache group %s, out of memory"), group);
+	    item->refcnt = 0;
+	    break;
 	}
     }
-    gritem->cache.refcnt++;
-    debug_return_ptr(&gritem->gr);
+    item->refcnt++;
+    debug_return_ptr(item->d.gr);
+}
+
+void
+sudo_gidlist_addref(struct gid_list *gidlist)
+{
+    debug_decl(sudo_gidlist_addref, SUDOERS_DEBUG_NSS)
+    ptr_to_item(gidlist)->refcnt++;
+    debug_return;
+}
+
+static void
+sudo_gidlist_delref_item(void *v)
+{
+    struct cache_item *item = v;
+    debug_decl(sudo_gidlist_delref_item, SUDOERS_DEBUG_NSS)
+
+    if (--item->refcnt == 0)
+	free(item);
+
+    debug_return;
+}
+
+void
+sudo_gidlist_delref(struct gid_list *gidlist)
+{
+    debug_decl(sudo_gidlist_delref, SUDOERS_DEBUG_NSS)
+    sudo_gidlist_delref_item(ptr_to_item(gidlist));
+    debug_return;
 }
 
 void
 sudo_grlist_addref(struct group_list *grlist)
 {
-    debug_decl(sudo_gr_addref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_grlist_addref, SUDOERS_DEBUG_NSS)
     ptr_to_item(grlist)->refcnt++;
     debug_return;
 }
@@ -498,10 +692,10 @@ static void
 sudo_grlist_delref_item(void *v)
 {
     struct cache_item *item = v;
-    debug_decl(sudo_gr_delref_item, SUDO_DEBUG_NSS)
+    debug_decl(sudo_grlist_delref_item, SUDOERS_DEBUG_NSS)
 
     if (--item->refcnt == 0)
-	efree(item);
+	free(item);
 
     debug_return;
 }
@@ -509,31 +703,15 @@ sudo_grlist_delref_item(void *v)
 void
 sudo_grlist_delref(struct group_list *grlist)
 {
-    debug_decl(sudo_gr_delref, SUDO_DEBUG_NSS)
+    debug_decl(sudo_grlist_delref, SUDOERS_DEBUG_NSS)
     sudo_grlist_delref_item(ptr_to_item(grlist));
-    debug_return;
-}
-
-void
-sudo_setgrent(void)
-{
-    debug_decl(sudo_setgrent, SUDO_DEBUG_NSS)
-
-    setgrent();
-    if (grcache_bygid == NULL)
-	grcache_bygid = rbcreate(cmp_grgid);
-    if (grcache_byname == NULL)
-	grcache_byname = rbcreate(cmp_grnam);
-    if (grlist_cache == NULL)
-	grlist_cache = rbcreate(cmp_grnam);
-
     debug_return;
 }
 
 void
 sudo_freegrcache(void)
 {
-    debug_decl(sudo_freegrcache, SUDO_DEBUG_NSS)
+    debug_decl(sudo_freegrcache, SUDOERS_DEBUG_NSS)
 
     if (grcache_bygid != NULL) {
 	rbdestroy(grcache_bygid, sudo_gr_delref_item);
@@ -547,17 +725,10 @@ sudo_freegrcache(void)
 	rbdestroy(grlist_cache, sudo_grlist_delref_item);
 	grlist_cache = NULL;
     }
-
-    debug_return;
-}
-
-void
-sudo_endgrent(void)
-{
-    debug_decl(sudo_endgrent, SUDO_DEBUG_NSS)
-
-    endgrent();
-    sudo_freegrcache();
+    if (gidlist_cache != NULL) {
+	rbdestroy(gidlist_cache, sudo_gidlist_delref_item);
+	gidlist_cache = NULL;
+    }
 
     debug_return;
 }
@@ -567,93 +738,270 @@ sudo_get_grlist(const struct passwd *pw)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    size_t len;
-    debug_decl(sudo_get_grlist, SUDO_DEBUG_NSS)
+    debug_decl(sudo_get_grlist, SUDOERS_DEBUG_NSS)
+
+    sudo_debug_printf(SUDO_DEBUG_DEBUG, "%s: looking up group names for %s",
+	__func__, pw->pw_name);
+
+    if (grlist_cache == NULL) {
+	grlist_cache = rbcreate(cmp_pwnam);
+	if (grlist_cache == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
 
     key.k.name = pw->pw_name;
+    getauthregistry(pw->pw_name, key.registry);
     if ((node = rbfind(grlist_cache, &key)) != NULL) {
-	item = (struct cache_item *) node->data;
+	item = node->data;
 	goto done;
     }
     /*
      * Cache group db entry if it exists or a negative response if not.
      */
-    item = sudo_make_grlist_item(pw, NULL, NULL);
+    item = sudo_make_grlist_item(pw, NULL);
     if (item == NULL) {
-	/* Should not happen. */
-	len = strlen(pw->pw_name) + 1;
-	item = ecalloc(1, sizeof(*item) + len);
-	item->refcnt = 1;
-	item->k.name = (char *) item + sizeof(*item);
-	memcpy(item->k.name, pw->pw_name, len);
-	/* item->d.grlist = NULL; */
+	/* Out of memory? */
+	debug_return_ptr(NULL);
     }
-    if (rbinsert(grlist_cache, item) != NULL)
-	fatalx(U_("unable to cache group list for %s, already exists"),
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(grlist_cache, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache group list for %s, already exists"),
 	    pw->pw_name);
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache group list for %s, out of memory"),
+	    pw->pw_name);
+	item->refcnt = 0;
+	break;
+    }
+    if (item->d.grlist != NULL) {
+	int i;
+	for (i = 0; i < item->d.grlist->ngroups; i++) {
+	    sudo_debug_printf(SUDO_DEBUG_DEBUG,
+		"%s: user %s is a member of group %s", __func__,
+		pw->pw_name, item->d.grlist->groups[i]);
+	}
+    }
 done:
     item->refcnt++;
     debug_return_ptr(item->d.grlist);
 }
 
-void
-sudo_set_grlist(struct passwd *pw, char * const *groups, char * const *gids)
+int
+sudo_set_grlist(struct passwd *pw, char * const *groups)
 {
     struct cache_item key, *item;
     struct rbnode *node;
-    debug_decl(sudo_set_grlist, SUDO_DEBUG_NSS)
+    debug_decl(sudo_set_grlist, SUDOERS_DEBUG_NSS)
+
+    if (grlist_cache == NULL) {
+	grlist_cache = rbcreate(cmp_pwnam);
+	if (grlist_cache == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_int(-1);
+	}
+    }
 
     /*
      * Cache group db entry if it doesn't already exist
      */
     key.k.name = pw->pw_name;
+    getauthregistry(NULL, key.registry);
     if ((node = rbfind(grlist_cache, &key)) == NULL) {
-	if ((item = sudo_make_grlist_item(pw, groups, gids)) == NULL)
-	    fatalx(U_("unable to parse groups for %s"), pw->pw_name);
-	if (rbinsert(grlist_cache, item) != NULL)
-	    fatalx(U_("unable to cache group list for %s, already exists"),
+	if ((item = sudo_make_grlist_item(pw, groups)) == NULL) {
+	    sudo_warnx(U_("unable to parse groups for %s"), pw->pw_name);
+	    debug_return_int(-1);
+	}
+	strlcpy(item->registry, key.registry, sizeof(item->registry));
+	switch (rbinsert(grlist_cache, item, NULL)) {
+	case 1:
+	    sudo_warnx(U_("unable to cache group list for %s, already exists"),
 		pw->pw_name);
+	    sudo_grlist_delref_item(item);
+	    break;
+	case -1:
+	    sudo_warnx(U_("unable to cache group list for %s, out of memory"),
+		pw->pw_name);
+	    sudo_grlist_delref_item(item);
+	    debug_return_int(-1);
+	}
     }
-    debug_return;
+    debug_return_int(0);
+}
+
+struct gid_list *
+sudo_get_gidlist(const struct passwd *pw)
+{
+    struct cache_item key, *item;
+    struct rbnode *node;
+    debug_decl(sudo_get_gidlist, SUDOERS_DEBUG_NSS)
+
+    sudo_debug_printf(SUDO_DEBUG_DEBUG, "%s: looking up group IDs for %s",
+	__func__, pw->pw_name);
+
+    if (gidlist_cache == NULL) {
+	gidlist_cache = rbcreate(cmp_pwnam);
+	if (gidlist_cache == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_ptr(NULL);
+	}
+    }
+
+    key.k.name = pw->pw_name;
+    getauthregistry(pw->pw_name, key.registry);
+    if ((node = rbfind(gidlist_cache, &key)) != NULL) {
+	item = node->data;
+	goto done;
+    }
+    /*
+     * Cache group db entry if it exists or a negative response if not.
+     */
+    item = sudo_make_gidlist_item(pw, NULL);
+    if (item == NULL) {
+	/* Out of memory? */
+	debug_return_ptr(NULL);
+    }
+    strlcpy(item->registry, key.registry, sizeof(item->registry));
+    switch (rbinsert(gidlist_cache, item, NULL)) {
+    case 1:
+	/* should not happen */
+	sudo_warnx(U_("unable to cache group list for %s, already exists"),
+	    pw->pw_name);
+	item->refcnt = 0;
+	break;
+    case -1:
+	/* can't cache item, just return it */
+	sudo_warnx(U_("unable to cache group list for %s, out of memory"),
+	    pw->pw_name);
+	item->refcnt = 0;
+	break;
+    }
+    if (item->d.gidlist != NULL) {
+	int i;
+	for (i = 0; i < item->d.gidlist->ngids; i++) {
+	    sudo_debug_printf(SUDO_DEBUG_DEBUG,
+		"%s: user %s has supplementary gid %u", __func__,
+		pw->pw_name, (unsigned int)item->d.gidlist->gids[i]);
+	}
+    }
+done:
+    item->refcnt++;
+    debug_return_ptr(item->d.gidlist);
+}
+
+int
+sudo_set_gidlist(struct passwd *pw, char * const *gids)
+{
+    struct cache_item key, *item;
+    struct rbnode *node;
+    debug_decl(sudo_set_gidlist, SUDOERS_DEBUG_NSS)
+
+    if (gidlist_cache == NULL) {
+	gidlist_cache = rbcreate(cmp_pwnam);
+	if (gidlist_cache == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    debug_return_int(-1);
+	}
+    }
+
+    /*
+     * Cache group db entry if it doesn't already exist
+     */
+    key.k.name = pw->pw_name;
+    getauthregistry(NULL, key.registry);
+    if ((node = rbfind(gidlist_cache, &key)) == NULL) {
+	if ((item = sudo_make_gidlist_item(pw, gids)) == NULL) {
+	    sudo_warnx(U_("unable to parse gids for %s"), pw->pw_name);
+	    debug_return_int(-1);
+	}
+	strlcpy(item->registry, key.registry, sizeof(item->registry));
+	switch (rbinsert(gidlist_cache, item, NULL)) {
+	case 1:
+	    sudo_warnx(U_("unable to cache group list for %s, already exists"),
+		pw->pw_name);
+	    sudo_gidlist_delref_item(item);
+	    break;
+	case -1:
+	    sudo_warnx(U_("unable to cache group list for %s, out of memory"),
+		pw->pw_name);
+	    sudo_gidlist_delref_item(item);
+	    debug_return_int(-1);
+	}
+    }
+    debug_return_int(0);
 }
 
 bool
 user_in_group(const struct passwd *pw, const char *group)
 {
-    struct group_list *grlist;
+    struct group_list *grlist = NULL;
+    struct gid_list *gidlist = NULL;
     struct group *grp = NULL;
-    const char *errstr;
-    int i;
     bool matched = false;
-    debug_decl(user_in_group, SUDO_DEBUG_NSS)
+    int i;
+    debug_decl(user_in_group, SUDOERS_DEBUG_NSS)
 
-    if ((grlist = sudo_get_grlist(pw)) != NULL) {
-	/*
-	 * If it could be a sudo-style group ID check gids first.
-	 */
-	if (group[0] == '#') {
-	    gid_t gid = (gid_t) atoid(group + 1, NULL, NULL, &errstr);
-	    if (errstr != NULL) {
-		sudo_debug_printf(SUDO_DEBUG_DEBUG|SUDO_DEBUG_DIAG,
-		    "gid %s %s", group, errstr);
-	    } else {
-		if (gid == pw->pw_gid) {
-		    matched = true;
-		    goto done;
-		}
-		for (i = 0; i < grlist->ngids; i++) {
-		    if (gid == grlist->gids[i]) {
+    /*
+     * If it could be a sudo-style group ID check gids first.
+     */
+    if (group[0] == '#') {
+	const char *errstr;
+	gid_t gid = (gid_t) sudo_strtoid(group + 1, NULL, NULL, &errstr);
+	if (errstr != NULL) {
+	    sudo_debug_printf(SUDO_DEBUG_DIAG|SUDO_DEBUG_LINENO,
+		"gid %s %s", group, errstr);
+	} else {
+	    if (gid == pw->pw_gid) {
+		matched = true;
+		goto done;
+	    }
+	    if ((gidlist = sudo_get_gidlist(pw)) != NULL) {
+		for (i = 0; i < gidlist->ngids; i++) {
+		    if (gid == gidlist->gids[i]) {
 			matched = true;
 			goto done;
 		    }
 		}
 	    }
 	}
+    }
 
-	/*
-	 * Next check the supplementary group vector.
-	 * It usually includes the password db group too.
-	 */
+    /*
+     * Next match the group name.  By default, sudoers resolves all the user's
+     * group IDs to names and matches by name.  If match_group_by_gid is
+     * set, each group is sudoers is resolved and matching is by group ID.
+     */
+    if (def_match_group_by_gid) {
+	gid_t gid;
+
+	/* Look up the ID of the group in sudoers. */
+	if ((grp = sudo_getgrnam(group)) == NULL)
+	    goto done;
+	gid = grp->gr_gid;
+
+	/* Check against user's primary (passwd file) group ID. */
+	if (gid == pw->pw_gid) {
+	    matched = true;
+	    goto done;
+	}
+
+	/* Check the supplementary group vector. */
+	if (gidlist == NULL && (gidlist = sudo_get_gidlist(pw)) != NULL) {
+	    for (i = 0; i < gidlist->ngids; i++) {
+		if (gid == gidlist->gids[i]) {
+		    matched = true;
+		    goto done;
+		}
+	    }
+	}
+    } else if ((grlist = sudo_get_grlist(pw)) != NULL) {
+	/* Check the supplementary group vector. */
 	for (i = 0; i < grlist->ngroups; i++) {
 	    if (strcasecmp(group, grlist->groups[i]) == 0) {
 		matched = true;
@@ -661,17 +1009,24 @@ user_in_group(const struct passwd *pw, const char *group)
 	    }
 	}
 
-	/* Finally check against user's primary (passwd file) group. */
+	/* Check against user's primary (passwd file) group. */
 	if ((grp = sudo_getgrgid(pw->pw_gid)) != NULL) {
 	    if (strcasecmp(group, grp->gr_name) == 0) {
 		matched = true;
 		goto done;
 	    }
 	}
-done:
-	if (grp != NULL)
-	    sudo_gr_delref(grp);
-	sudo_grlist_delref(grlist);
     }
+
+done:
+    if (grp != NULL)
+	sudo_gr_delref(grp);
+    if (grlist != NULL)
+	sudo_grlist_delref(grlist);
+    if (gidlist != NULL)
+	sudo_gidlist_delref(gidlist);
+
+    sudo_debug_printf(SUDO_DEBUG_DEBUG, "%s: user %s %sin group %s",
+	__func__, pw->pw_name, matched ? "" : "NOT ", group);
     debug_return_bool(matched);
 }

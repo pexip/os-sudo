@@ -55,11 +55,11 @@ For most systems and configurations it is possible simply to:
        install-doc, and install-sudoers make targets.
 
     6) Edit the sudoers file with `visudo' as necessary for your
-       site.  You will probably want to refer the sample.sudoers
+       site.  You will probably want to refer the example sudoers
        file and sudoers man page included with the sudo package.
 
     7) If you want to use syslogd(8) to do the logging, you'll need
-       to update your /etc/syslog.conf file.  See the sample.syslog.conf
+       to update your /etc/syslog.conf file.  See the example syslog.conf
        file included in the distribution for an example.
 
 Available configure options
@@ -122,6 +122,9 @@ Directory and file names:
   --docdir=DIR
 	Install other sudo documentation in DIR [DATAROOTDIR/doc/sudo]
 
+  --with-exampledir=DIR
+	Install sudo example files in DIR [DATAROOTDIR/doc/sudo/examples]
+
   --with-plugindir=DIR
 	Set the directory that sudo looks in to find the policy and I/O
 	logging plugins.  Defaults to the LIBEXEC/sudo.
@@ -145,12 +148,30 @@ Directory and file names:
 	    /var/db, /var/lib, /var/adm, /usr/adm
 	This directory should not be cleared when the system boots.
 
+  --with-tzdir=DIR
+        Set the directory to the system's time zone data files.  This 
+	is only used when sanitizing the TZ environment variable to
+	allow for fully-qualified paths in TZ.
+        By default, configure will look for an existing "zoneinfo"
+	directory in the following locations:
+	    /usr/share /usr/share/lib /usr/lib /etc
+	If no zoneinfo directory is found, the TZ variable may not
+	contain a fully-qualified path.
+
 Compilation options:
   --disable-hardening
 	Disable the use of compiler/linker exploit mitigation options
 	which are enabled by default.  This includes compiling with
 	_FORTIFY_SOURCE defined to 2, building with -fstack-protector
 	and linking with -zrelro, where supported.
+
+  --enable-asan
+        Enable the use of AddressSanitizer if supported by the
+        compiler.  This can help detect common problems such as
+        buffer overflows and user after free bugs as well as behavior
+	undefined by the C standard.  For more information see
+        https://github.com/google/sanitizers/wiki/AddressSanitizer
+	The following compiler flag is used: -fsanitize=address,undefined
 
   --enable-pie
         Build sudo and related programs as as a position independent
@@ -185,6 +206,15 @@ Compilation options:
         binary itself.  This will also disable the noexec option
         as it too relies on dynamic shared object support.
 
+  --disable-shared-libutil
+        Disable the use of the dynamic libsudo_util library.  By
+        default, sudo, the sudoers plugin and the associated sudo
+        utilities are linked against a shared version of libsudo_util.
+        If the --disable-shared-libutil option is specified, a
+        static version of the libsudo_util library will be used
+        instead.  This option may only be used in conjunction with
+        the --enable-static-sudoers option.
+
   --enable-static-sudoers
         By default, the sudoers plugin is built and installed as a
         dynamic shared object.  When the --enable-static-sudoers
@@ -193,15 +223,25 @@ Compilation options:
         not prevent other plugins from being used and the noexec
         option will continue to function.
 
+  --enable-tmpfiles.d=DIR
+        Set the directory to be used when installing the sudo
+        tmpfiles.d file.  This is used to create (or clear) the
+        sudo time stamp directory on operating systems that use
+        systemd.  If this option is not specified, configure will
+        use the /usr/lib/tmpfiles.d directory if the file
+        /usr/lib/tmpfiles.d/systemd.conf exists.
+
   --enable-zlib[=location]
 	Enable the use of the zlib compress library when storing
 	I/O log files.  If specified, location is the base directory
 	containing the zlib include and lib directories.  The special
-	values "system" and "builtin" can be used to indicate that
-	the system version of zlib should be used or that the version
-	of zlib shipped with sudo should be used instead.
-	If this option is not specified, configure will use the
-	system zlib if it is present.
+	values "system", "builtin", "shared" and "static" can be
+	used to indicate that the system version of zlib should be
+	used or that the version of zlib shipped with sudo should
+	be used instead.  If "static" is specified, sudo will
+	statically link the builtin zlib and not install it.  If
+	this option is not specified, configure will use the system
+	zlib if it is present, falling back on the sudo version.
 
   --with-incpath=DIR
 	Adds the specified directory (or directories) to CPPFLAGS
@@ -301,6 +341,10 @@ Optional features:
         (SSSD) as a sudoers data source.  For more information on
         SSD, see http://fedorahosted.org/sssd/
 
+  --with-sssd-conf=PATH
+        Specify the path to the SSSD configuration file, if different
+	from the default value of /etc/sssd/sssd.conf.
+
   --with-sssd-lib=PATH
         Specify the path to the SSSD shared library, which is loaded
         at run-time.
@@ -360,10 +404,11 @@ Authentication options:
 	link without it.
 
   --with-aixauth
-	Enable support for the AIX 4.x general authentication function.
-	This will use the authentication scheme specified for the user
-	on the machine.  It is on by default for AIX systems that
-	support it.
+        Enable support for the AIX general authentication function.
+        This will use the authentication scheme specified for the
+        user on the machine.  By default, sudo will use either AIX
+        authentication or PAM depending on the value of the auth_type
+        setting in the /etc/security/login.cfg file.
 
   --with-bsdauth
 	Enable support for BSD authentication.  This is the default
@@ -400,6 +445,10 @@ Authentication options:
         the user name (separated by a slash) when creating the
         principal name.
 
+  --with-solaris-audit
+	Enable audit support for Solaris 11 and above.
+	For older versions of Solaris, use --with-bsm-audit
+
   --with-opie[=DIR]
 	Enable NRL OPIE OTP (One Time Password) support.  If specified,
 	DIR should contain include and lib directories with opie.h
@@ -413,8 +462,8 @@ Authentication options:
 	Linux, Solaris and HP-UX (version 11 and higher).
 
 	NOTE: on RedHat Linux and Fedora you *must* have an /etc/pam.d/sudo
-	file install.  You may either use the sample.pam file included with
-	sudo or use /etc/pam.d/su as a reference.  The sample.pam file
+	file install.  You may either use the example pam.conf file included
+	with sudo or use /etc/pam.d/su as a reference.  The pam.conf file
 	included with sudo may or may not work with other Linux distributions.
 	On Solaris and HP-UX 11 systems you should check (and understand)
 	the contents of /etc/pam.conf.  Do a "man pam.conf" for more
@@ -664,7 +713,7 @@ Options that set runtime-changeable default values:
 	How you want to do your logging.  You may choose "syslog",
 	"file", or "both".  Setting this to "syslog" is nice because
 	you can keep all of your sudo logs in one place (see the
-	sample.syslog.conf file).  The default is "syslog".
+	example syslog.conf file).  The default is "syslog".
 	Sudoers options: syslog and logfile
 
   --with-loglen=NUMBER
@@ -844,11 +893,3 @@ Solaris:
     on Solaris 11 and higher and is distributed on the Solaris
     Companion CD for older Solaris releases.  You can also download
     gcc packages from http://www.opencsw.org/packages/CSWgcc4core/
-
-SunOS 4.x:
-    SunOS does not ship with an ANSI C compiler.  You will need to
-    install an ANSI compiler such as gcc to build sudo.
-
-    The /bin/sh shipped with SunOS blows up while running configure.
-    You can work around this by installing bash or zsh.  If you
-    have bash or zsh in your path, configure will use it automatically.

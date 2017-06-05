@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,8 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDO_UTIL_H
-#define _SUDO_UTIL_H
+#ifndef SUDO_UTIL_H
+#define SUDO_UTIL_H
 
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
@@ -104,25 +104,43 @@
 #endif
 
 /*
- * Macros to extract ctime and mtime as timevals.
+ * The timespec version of st_mtime may vary on different platforms.
  */
-#ifdef HAVE_ST_MTIM
-# ifdef HAVE_ST__TIM
-#  define ctim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_ctim.st__tim)
-#  define mtim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_mtim.st__tim)
+#if defined(HAVE_ST_MTIM)
+# if defined(HAVE_ST__TIM)
+#  define SUDO_ST_MTIM		st_mtim.st__tim
 # else
-#  define ctim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_ctim)
-#  define mtim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_mtim)
+#  define SUDO_ST_MTIM		st_mtim
+# endif
+#elif defined(HAVE_ST_MTIMESPEC)
+# define SUDO_ST_MTIM		st_mtimespec
+#endif
+
+/*
+ * Macro to extract mtime as timespec.
+ * If there is no way to set the timestamp using nanosecond precision,
+ * we only fetch microsecond precision.  Otherwise there is a mismatch
+ * between the timestamp we read and the one we wrote.
+ */
+#if defined(SUDO_ST_MTIM)
+# if defined(HAVE_FUTIMENS) && defined(HAVE_UTIMENSAT)
+#  define mtim_get(_x, _y)	do { (_y).tv_sec = (_x)->SUDO_ST_MTIM.tv_sec; (_y).tv_nsec = (_x)->SUDO_ST_MTIM.tv_nsec; } while (0)
+# else
+#  define mtim_get(_x, _y)	do { (_y).tv_sec = (_x)->SUDO_ST_MTIM.tv_sec; (_y).tv_nsec = ((_x)->SUDO_ST_MTIM.tv_nsec / 1000) * 1000; } while (0)
 # endif
 #else
-# ifdef HAVE_ST_MTIMESPEC
-#  define ctim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_ctimespec)
-#  define mtim_get(_x, _y)	TIMESPEC_TO_TIMEVAL((_y), &(_x)->st_mtimespec)
-# else
-#  define ctim_get(_x, _y)	do { (_y)->tv_sec = (_x)->st_ctime; (_y)->tv_usec = 0; } while (0)
-#  define mtim_get(_x, _y)	do { (_y)->tv_sec = (_x)->st_mtime; (_y)->tv_usec = 0; } while (0)
-# endif /* HAVE_ST_MTIMESPEC */
+# define mtim_get(_x, _y)	do { (_y).tv_sec = (_x)->st_mtime; (_y).tv_nsec = 0; } while (0)
 #endif /* HAVE_ST_MTIM */
+
+/* Bit map macros. */
+#define sudo_setbit(_a, _i)	((_a)[(_i) / NBBY] |= 1 << ((_i) % NBBY))
+#define sudo_clrbit(_a, _i)	((_a)[(_i) / NBBY] &= ~(1<<((_i) % NBBY)))
+#define sudo_isset(_a, _i)	((_a)[(_i) / NBBY] & (1<<((_i) % NBBY)))
+#define sudo_isclr(_a, _i)	(((_a)[(_i) / NBBY] & (1<<((_i) % NBBY))) == 0)
+
+/* sudo_parseln() flags */
+#define PARSELN_COMM_BOL	0x01	/* comments only at begining of line */
+#define PARSELN_CONT_IGN	0x02	/* ignore line continuation char */
 
 /*
  * Macros to quiet gcc's warn_unused_result attribute.
@@ -137,39 +155,101 @@
 #endif
 
 /* aix.c */
-void aix_prep_user(char *user, const char *tty);
-void aix_restoreauthdb(void);
-void aix_setauthdb(char *user);
+__dso_public int aix_getauthregistry_v1(char *user, char *saved_registry);
+#define aix_getauthregistry(_a, _b) aix_getauthregistry_v1((_a), (_b))
+__dso_public int aix_prep_user_v1(char *user, const char *tty);
+#define aix_prep_user(_a, _b) aix_prep_user_v1((_a), (_b))
+__dso_public int aix_restoreauthdb_v1(void);
+#define aix_restoreauthdb() aix_restoreauthdb_v1()
+__dso_public int aix_setauthdb_v1(char *user);
+__dso_public int aix_setauthdb_v2(char *user, char *registry);
+#define aix_setauthdb(_a, _b) aix_setauthdb_v2((_a), (_b))
 
-/* atobool.c */
-int atobool(const char *str);
+/* gethostname.c */
+__dso_public char *sudo_gethostname_v1(void);
+#define sudo_gethostname() sudo_gethostname_v1()
 
-/* atoid.c */
-id_t atoid(const char *str, const char *sep, char **endp, const char **errstr);
-
-/* atomode.c */
-int atomode(const char *cp, const char **errstr);
-
-/* fmt_string.h */
-char *fmt_string(const char *var, const char *value);
+/* gettime.c */
+__dso_public int sudo_gettime_mono_v1(struct timespec *ts);
+#define sudo_gettime_mono(_a) sudo_gettime_mono_v1((_a))
+__dso_public int sudo_gettime_real_v1(struct timespec *ts);
+#define sudo_gettime_real(_a) sudo_gettime_real_v1((_a))
 
 /* gidlist.c */
-int parse_gid_list(const char *gidstr, const gid_t *basegid, GETGROUPS_T **gidsp);
+__dso_public int sudo_parse_gids_v1(const char *gidstr, const gid_t *basegid, GETGROUPS_T **gidsp);
+#define sudo_parse_gids(_a, _b, _c) sudo_parse_gids_v1((_a), (_b), (_c))
+
+/* key_val.c */
+__dso_public char *sudo_new_key_val_v1(const char *key, const char *value);
+#define sudo_new_key_val(_a, _b) sudo_new_key_val_v1((_a), (_b))
+
+/* locking.c */
+#define SUDO_LOCK	1		/* lock a file */
+#define SUDO_TLOCK	2		/* test & lock a file (non-blocking) */
+#define SUDO_UNLOCK	4		/* unlock a file */
+__dso_public bool sudo_lock_file_v1(int fd, int action);
+#define sudo_lock_file(_a, _b) sudo_lock_file_v1((_a), (_b))
+__dso_public bool sudo_lock_region_v1(int fd, int action, off_t len);
+#define sudo_lock_region(_a, _b, _c) sudo_lock_region_v1((_a), (_b), (_c))
+
+/* parseln.c */
+__dso_public ssize_t sudo_parseln_v1(char **buf, size_t *bufsize, unsigned int *lineno, FILE *fp);
+__dso_public ssize_t sudo_parseln_v2(char **buf, size_t *bufsize, unsigned int *lineno, FILE *fp, int flags);
+#define sudo_parseln(_a, _b, _c, _d, _e) sudo_parseln_v2((_a), (_b), (_c), (_d), (_e))
 
 /* progname.c */
-void initprogname(const char *);
+__dso_public void initprogname(const char *);
+
+/* secure_path.c */
+#define SUDO_PATH_SECURE		0
+#define SUDO_PATH_MISSING		-1
+#define SUDO_PATH_BAD_TYPE		-2
+#define SUDO_PATH_WRONG_OWNER		-3
+#define SUDO_PATH_WORLD_WRITABLE	-4
+#define SUDO_PATH_GROUP_WRITABLE	-5
+struct stat;
+__dso_public int sudo_secure_dir_v1(const char *path, uid_t uid, gid_t gid, struct stat *sbp);
+#define sudo_secure_dir(_a, _b, _c, _d) sudo_secure_dir_v1((_a), (_b), (_c), (_d))
+__dso_public int sudo_secure_file_v1(const char *path, uid_t uid, gid_t gid, struct stat *sbp);
+#define sudo_secure_file(_a, _b, _c, _d) sudo_secure_file_v1((_a), (_b), (_c), (_d))
 
 /* setgroups.c */
-int sudo_setgroups(int ngids, const GETGROUPS_T *gids);
+__dso_public int sudo_setgroups_v1(int ngids, const GETGROUPS_T *gids);
+#define sudo_setgroups(_a, _b) sudo_setgroups_v1((_a), (_b))
+
+/* strsplit.c */
+__dso_public const char *sudo_strsplit_v1(const char *str, const char *endstr, const char *sep, const char **last);
+#define sudo_strsplit(_a, _b, _c, _d) sudo_strsplit_v1(_a, _b, _c, _d)
+
+/* strtobool.c */
+__dso_public int sudo_strtobool_v1(const char *str);
+#define sudo_strtobool(_a) sudo_strtobool_v1((_a))
+
+/* strtoid.c */
+__dso_public id_t sudo_strtoid_v1(const char *str, const char *sep, char **endp, const char **errstr);
+#define sudo_strtoid(_a, _b, _c, _d) sudo_strtoid_v1((_a), (_b), (_c), (_d))
+
+/* strtomode.c */
+__dso_public int sudo_strtomode_v1(const char *cp, const char **errstr);
+#define sudo_strtomode(_a, _b) sudo_strtomode_v1((_a), (_b))
+
+/* sudo_printf.c */
+extern int (*sudo_printf)(int msg_type, const char *fmt, ...);
 
 /* term.c */
-bool term_cbreak(int);
-bool term_copy(int, int);
-bool term_noecho(int);
-bool term_raw(int, int);
-bool term_restore(int, bool);
+__dso_public bool sudo_term_cbreak_v1(int fd);
+#define sudo_term_cbreak(_a) sudo_term_cbreak_v1((_a))
+__dso_public bool sudo_term_copy_v1(int src, int dst);
+#define sudo_term_copy(_a, _b) sudo_term_copy_v1((_a), (_b))
+__dso_public bool sudo_term_noecho_v1(int fd);
+#define sudo_term_noecho(_a) sudo_term_noecho_v1((_a))
+__dso_public bool sudo_term_raw_v1(int fd, int isig);
+#define sudo_term_raw(_a, _b) sudo_term_raw_v1((_a), (_b))
+__dso_public bool sudo_term_restore_v1(int fd, bool flush);
+#define sudo_term_restore(_a, _b) sudo_term_restore_v1((_a), (_b))
 
 /* ttysize.c */
-void get_ttysize(int *rowp, int *colp);
+__dso_public void sudo_get_ttysize_v1(int *rowp, int *colp);
+#define sudo_get_ttysize(_a, _b) sudo_get_ttysize_v1((_a), (_b))
 
-#endif /* _SUDO_UTIL_H */
+#endif /* SUDO_UTIL_H */

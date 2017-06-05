@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2005, 2007, 2010-2012
+ * Copyright (c) 1999-2005, 2007, 2010-2012, 2014-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  * Copyright (c) 2002 Michael Stroucken <michael@stroucken.org>
  *
@@ -25,25 +25,18 @@
 
 #include <config.h>
 
+#ifdef HAVE_SECURID
+
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 
 /* Needed for SecurID v5.0 Authentication on UNIX */
@@ -69,7 +62,7 @@ int
 sudo_securid_init(struct passwd *pw, sudo_auth *auth)
 {
     static SDI_HANDLE sd_dat;			/* SecurID handle */
-    debug_decl(sudo_securid_init, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_securid_init, SUDOERS_DEBUG_AUTH)
 
     auth->data = (void *) &sd_dat;		/* For method-specific data */
 
@@ -77,7 +70,7 @@ sudo_securid_init(struct passwd *pw, sudo_auth *auth)
     if (AceInitialize() != SD_FALSE)
 	debug_return_int(AUTH_SUCCESS);
 
-    warningx(U_("failed to initialise the ACE API library"));
+    sudo_warnx(U_("failed to initialise the ACE API library"));
     debug_return_int(AUTH_FATAL);
 }
 
@@ -99,11 +92,11 @@ sudo_securid_setup(struct passwd *pw, char **promptp, sudo_auth *auth)
 {
     SDI_HANDLE *sd = (SDI_HANDLE *) auth->data;
     int retval;
-    debug_decl(sudo_securid_setup, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_securid_setup, SUDOERS_DEBUG_AUTH)
 
     /* Re-initialize SecurID every time. */
     if (SD_Init(sd) != ACM_OK) {
-	warningx(U_("unable to contact the SecurID server"));
+	sudo_warnx(U_("unable to contact the SecurID server"));
 	debug_return_int(AUTH_FATAL);
     }
 
@@ -112,23 +105,23 @@ sudo_securid_setup(struct passwd *pw, char **promptp, sudo_auth *auth)
 
     switch (retval) {
 	case ACM_OK:
-		warningx(U_("User ID locked for SecurID Authentication"));
+		sudo_warnx(U_("User ID locked for SecurID Authentication"));
 		debug_return_int(AUTH_SUCCESS);
 
         case ACE_UNDEFINED_USERNAME:
-		warningx(U_("invalid username length for SecurID"));
+		sudo_warnx(U_("invalid username length for SecurID"));
 		debug_return_int(AUTH_FATAL);
 
 	case ACE_ERR_INVALID_HANDLE:
-		warningx(U_("invalid Authentication Handle for SecurID"));
+		sudo_warnx(U_("invalid Authentication Handle for SecurID"));
 		debug_return_int(AUTH_FATAL);
 
 	case ACM_ACCESS_DENIED:
-		warningx(U_("SecurID communication failed"));
+		sudo_warnx(U_("SecurID communication failed"));
 		debug_return_int(AUTH_FATAL);
 
 	default:
-		warningx(U_("unknown SecurID error"));
+		sudo_warnx(U_("unknown SecurID error"));
 		debug_return_int(AUTH_FATAL);
 	}
 }
@@ -146,56 +139,60 @@ sudo_securid_setup(struct passwd *pw, char **promptp, sudo_auth *auth)
  *                   incorrect authentication, fatal on errors
  */
 int
-sudo_securid_verify(struct passwd *pw, char *pass, sudo_auth *auth)
+sudo_securid_verify(struct passwd *pw, char *pass, sudo_auth *auth, struct sudo_conv_callback *callback)
 {
     SDI_HANDLE *sd = (SDI_HANDLE *) auth->data;
-    int rval;
-    debug_decl(sudo_securid_verify, SUDO_DEBUG_AUTH)
+    int ret;
+    debug_decl(sudo_securid_verify, SUDOERS_DEBUG_AUTH)
 
     pass = auth_getpass("Enter your PASSCODE: ",
-	def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF);
+	def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
 
     /* Have ACE verify password */
     switch (SD_Check(*sd, pass, pw->pw_name)) {
 	case ACM_OK:
-		rval = AUTH_SUCESS;
+		ret = AUTH_SUCESS;
 		break;
 
 	case ACE_UNDEFINED_PASSCODE:
-		warningx(U_("invalid passcode length for SecurID"));
-		rval = AUTH_FATAL;
+		sudo_warnx(U_("invalid passcode length for SecurID"));
+		ret = AUTH_FATAL;
 		break;
 
 	case ACE_UNDEFINED_USERNAME:
-		warningx(U_("invalid username length for SecurID"));
-		rval = AUTH_FATAL;
+		sudo_warnx(U_("invalid username length for SecurID"));
+		ret = AUTH_FATAL;
 		break;
 
 	case ACE_ERR_INVALID_HANDLE:
-		warningx(U_("invalid Authentication Handle for SecurID"));
-		rval = AUTH_FATAL;
+		sudo_warnx(U_("invalid Authentication Handle for SecurID"));
+		ret = AUTH_FATAL;
 		break;
 
 	case ACM_ACCESS_DENIED:
-		rval = AUTH_FAILURE;
+		ret = AUTH_FAILURE;
 		break;
 
 	case ACM_NEXT_CODE_REQUIRED:
                 /* Sometimes (when current token close to expire?)
                    ACE challenges for the next token displayed
                    (entered without the PIN) */
+		if (pass != NULL) {
+		    memset_s(pass, SUDO_PASS_MAX, 0, strlen(pass));
+		    free(pass);
+		}
         	pass = auth_getpass("\
 !!! ATTENTION !!!\n\
 Wait for the token code to change, \n\
 then enter the new token code.\n", \
-		def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF);
+		def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
 
 		if (SD_Next(*sd, pass) == ACM_OK) {
-			rval = AUTH_SUCCESS;
+			ret = AUTH_SUCCESS;
 			break;
 		}
 
-		rval = AUTH_FAILURE;
+		ret = AUTH_FAILURE;
 		break;
 
 	case ACM_NEW_PIN_REQUIRED:
@@ -205,20 +202,29 @@ then enter the new token code.\n", \
 		 */
 		/* XXX - Is setting up a new PIN within sudo's scope? */
 		SD_Pin(*sd, "");
-		fprintf(stderr, "Your SecurID access has not yet been set up.\n");
-		fprintf(stderr, "Please set up a PIN before you try to authenticate.\n");
-		rval = AUTH_FATAL;
+		sudo_printf(SUDO_CONV_ERROR_MSG, 
+		    "Your SecurID access has not yet been set up.\n");
+		sudo_printf(SUDO_CONV_ERROR_MSG, 
+		    "Please set up a PIN before you try to authenticate.\n");
+		ret = AUTH_FATAL;
 		break;
 
 	default:
-		warningx(U_("unknown SecurID error"));
-		rval = AUTH_FATAL;
+		sudo_warnx(U_("unknown SecurID error"));
+		ret = AUTH_FATAL;
 		break;
     }
 
     /* Free resources */
     SD_Close(*sd);
 
+    if (pass != NULL) {
+	memset_s(pass, SUDO_PASS_MAX, 0, strlen(pass));
+	free(pass);
+    }
+
     /* Return stored state to calling process */
-    debug_return_int(rval);
+    debug_return_int(ret);
 }
+
+#endif /* HAVE_SECURID */

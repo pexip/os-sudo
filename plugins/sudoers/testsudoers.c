@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2013
+ * Copyright (c) 1996, 1998-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,36 +21,20 @@
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
  */
 
-#define _SUDO_MAIN
-
 #include <config.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
-#ifdef HAVE_FNMATCH
-# include <fnmatch.h>
-#else
-# include "compat/fnmatch.h"
-#endif /* HAVE_FNMATCH */
+#include <unistd.h>
 #ifdef HAVE_NETGROUP_H
 # include <netgroup.h>
 #endif /* HAVE_NETGROUP_H */
@@ -64,8 +48,17 @@
 #include "interfaces.h"
 #include "parse.h"
 #include "sudo_conf.h"
-#include "secure_path.h"
 #include <gram.h>
+
+#ifdef HAVE_FNMATCH
+# include <fnmatch.h>
+#else
+# include "compat/fnmatch.h"
+#endif /* HAVE_FNMATCH */
+
+#ifndef YYDEBUG
+# define YYDEBUG 0
+#endif
 
 /*
  * Function Prototypes
@@ -78,7 +71,7 @@ void print_userspecs(void);
 void usage(void) __attribute__((__noreturn__));
 static void set_runaspw(const char *);
 static void set_runasgr(const char *);
-static int cb_runas_default(const char *);
+static bool cb_runas_default(const union sudo_defs_val *);
 static int testsudoers_print(const char *msg);
 
 extern void setgrfile(const char *);
@@ -106,7 +99,7 @@ static char *runas_group, *runas_user;
 #if defined(SUDO_DEVEL) && defined(__OpenBSD__)
 extern char *malloc_options;
 #endif
-#ifdef YYDEBUG
+#if YYDEBUG
 extern int sudoersdebug;
 #endif
 
@@ -119,27 +112,30 @@ main(int argc, char *argv[])
     struct privilege *priv;
     struct userspec *us;
     char *p, *grfile, *pwfile;
-    char hbuf[HOST_NAME_MAX + 1];
     const char *errstr;
     int match, host_match, runas_match, cmnd_match;
     int ch, dflag, exitcode = 0;
-    debug_decl(main, SUDO_DEBUG_MAIN)
+    debug_decl(main, SUDOERS_DEBUG_MAIN)
 
 #if defined(SUDO_DEVEL) && defined(__OpenBSD__)
-    malloc_options = "AFGJPR";
+    malloc_options = "S";
 #endif
-#ifdef YYDEBUG
+#if YYDEBUG
     sudoersdebug = 1;
 #endif
 
     initprogname(argc > 0 ? argv[0] : "testsudoers");
 
-    sudoers_initlocale(setlocale(LC_ALL, ""), def_sudoers_locale);
+    if (!sudoers_initlocale(setlocale(LC_ALL, ""), def_sudoers_locale))
+	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+    sudo_warn_set_locale_func(sudoers_warn_setlocale);
     bindtextdomain("sudoers", LOCALEDIR); /* XXX - should have own domain */
     textdomain("sudoers");
 
-    /* Read sudo.conf. */
-    sudo_conf_read(NULL);
+    /* Initialize the debug subsystem. */
+    if (sudo_conf_read(NULL, SUDO_CONF_DEBUG) == -1)
+	exit(EXIT_FAILURE);
+    sudoers_debug_register(getprogname(), sudo_conf_debug_files(getprogname()));
 
     dflag = 0;
     grfile = pwfile = NULL;
@@ -152,12 +148,13 @@ main(int argc, char *argv[])
 		user_host = optarg;
 		break;
 	    case 'G':
-		sudoers_gid = (gid_t)atoid(optarg, NULL, NULL, &errstr);
+		sudoers_gid = (gid_t)sudo_strtoid(optarg, NULL, NULL, &errstr);
 		if (errstr != NULL)
-		    fatalx("group ID %s: %s", optarg, errstr);
+		    sudo_fatalx("group ID %s: %s", optarg, errstr);
 		break;
 	    case 'g':
 		runas_group = optarg;
+		SET(sudo_user.flags, RUNAS_GROUP_SPECIFIED);
 		break;
 	    case 'p':
 		pwfile = optarg;
@@ -169,12 +166,13 @@ main(int argc, char *argv[])
 		trace_print = testsudoers_print;
 		break;
 	    case 'U':
-		sudoers_uid = (uid_t)atoid(optarg, NULL, NULL, &errstr);
+		sudoers_uid = (uid_t)sudo_strtoid(optarg, NULL, NULL, &errstr);
 		if (errstr != NULL)
-		    fatalx("user ID %s: %s", optarg, errstr);
+		    sudo_fatalx("user ID %s: %s", optarg, errstr);
 		break;
 	    case 'u':
 		runas_user = optarg;
+		SET(sudo_user.flags, RUNAS_USER_SPECIFIED);
 		break;
 	    default:
 		usage();
@@ -189,8 +187,6 @@ main(int argc, char *argv[])
 	setgrfile(grfile);
     if (pwfile)
 	setpwfile(pwfile);
-    sudo_setpwent();
-    sudo_setgrent();
 
     if (argc < 2) {
 	if (!dflag)
@@ -208,17 +204,16 @@ main(int argc, char *argv[])
 	argc -= 2;
     }
     if ((sudo_user.pw = sudo_getpwnam(user_name)) == NULL)
-	fatalx(U_("unknown user: %s"), user_name);
+	sudo_fatalx(U_("unknown user: %s"), user_name);
 
     if (user_host == NULL) {
-	if (gethostname(hbuf, sizeof(hbuf)) != 0)
-	    fatal("gethostname");
-	hbuf[sizeof(hbuf) - 1] = '\0';
-	user_host = hbuf;
+	if ((user_host = sudo_gethostname()) == NULL)
+	    sudo_fatal("gethostname");
     }
     if ((p = strchr(user_host, '.'))) {
 	*p = '\0';
-	user_shost = estrdup(user_host);
+	if ((user_shost = strdup(user_host)) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	*p = '.';
     } else {
 	user_shost = user_host;
@@ -234,11 +229,12 @@ main(int argc, char *argv[])
 	for (size = 0, from = argv; *from; from++)
 	    size += strlen(*from) + 1;
 
-	user_args = (char *) emalloc(size);
+	if ((user_args = malloc(size)) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	for (to = user_args, from = argv; *from; from++) {
 	    n = strlcpy(to, *from, size - (to - user_args));
 	    if (n >= size - (to - user_args))
-		fatalx(U_("internal error, %s overflow"), "init_vars()");
+		sudo_fatalx(U_("internal error, %s overflow"), getprogname());
 	    to += n;
 	    *to++ = ' ';
 	}
@@ -246,18 +242,39 @@ main(int argc, char *argv[])
     }
 
     /* Initialize default values. */
-    init_defaults();
+    if (!init_defaults())
+	sudo_fatalx(U_("unable to initialize sudoers default values"));
+
+    /* Set group_plugin callback. */
+    sudo_defs_table[I_GROUP_PLUGIN].callback = cb_group_plugin;
 
     /* Set runas callback. */
     sudo_defs_table[I_RUNAS_DEFAULT].callback = cb_runas_default;
 
+    /* Set locale callback. */
+    sudo_defs_table[I_SUDOERS_LOCALE].callback = sudoers_locale_callback;
+
     /* Load ip addr/mask for each interface. */
-    if (get_net_ifs(&p) > 0)
-	set_interfaces(p);
+    if (get_net_ifs(&p) > 0) {
+	if (!set_interfaces(p))
+	    sudo_fatal(U_("unable to parse network address list"));
+    }
 
     /* Allocate space for data structures in the parser. */
     init_parser("sudoers", false);
 
+    /*
+     * Set runas passwd/group entries based on command line or sudoers.
+     * Note that if runas_group was specified without runas_user we
+     * run the command as the invoking user.
+     */
+    if (runas_group != NULL) {
+        set_runasgr(runas_group);
+        set_runaspw(runas_user ? runas_user : user_name);
+    } else
+        set_runaspw(runas_user ? runas_user : def_runas_default);
+
+    sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, NULL);
     if (sudoersparse() != 0 || parse_error) {
 	parse_error = true;
 	if (errorlineno != -1)
@@ -269,24 +286,9 @@ main(int argc, char *argv[])
 	(void) fputs("Parses OK", stdout);
     }
 
-    if (!update_defaults(SETDEF_ALL))
+    if (!update_defaults(SETDEF_ALL, false))
 	(void) fputs(" (problem with defaults entries)", stdout);
     puts(".");
-
-    if (def_group_plugin && group_plugin_load(def_group_plugin) != true)
-	def_group_plugin = NULL;
-
-    /*
-     * Set runas passwd/group entries based on command line or sudoers.
-     * Note that if runas_group was specified without runas_user we
-     * defer setting runas_pw so the match routines know to ignore it.
-     */
-    if (runas_group != NULL) {
-        set_runasgr(runas_group);
-        if (runas_user != NULL)
-            set_runaspw(runas_user);
-    } else
-        set_runaspw(runas_user ? runas_user : def_runas_default);
 
     if (dflag) {
 	(void) putchar('\n');
@@ -307,7 +309,7 @@ main(int argc, char *argv[])
 	    putchar('\n');
 	    print_privilege(priv);
 	    putchar('\n');
-	    host_match = hostlist_matches(&priv->hostlist);
+	    host_match = hostlist_matches(sudo_user.pw, &priv->hostlist);
 	    if (host_match == ALLOW) {
 		puts("\thost  matched");
 		TAILQ_FOREACH_REVERSE(cs, &priv->cmndlist, cmndspec_list, entries) {
@@ -323,11 +325,11 @@ main(int argc, char *argv[])
 		    }
 		}
 	    } else
-		puts(_("\thost  unmatched"));
+		puts(U_("\thost  unmatched"));
 	}
     }
-    puts(match == ALLOW ? _("\nCommand allowed") :
-	match == DENY ?  _("\nCommand denied") :  _("\nCommand unmatched"));
+    puts(match == ALLOW ? U_("\nCommand allowed") :
+	match == DENY ?  U_("\nCommand denied") :  U_("\nCommand unmatched"));
 
     /*
      * Exit codes:
@@ -338,8 +340,8 @@ main(int argc, char *argv[])
      */
     exitcode = parse_error ? 1 : (match == ALLOW ? 0 : match + 3);
 done:
-    sudo_endpwent();
-    sudo_endgrent();
+    sudo_freepwcache();
+    sudo_freegrcache();
     sudo_debug_exit_int(__func__, __FILE__, __LINE__, sudo_debug_subsys, exitcode);
     exit(exitcode);
 }
@@ -348,19 +350,19 @@ static void
 set_runaspw(const char *user)
 {
     struct passwd *pw = NULL;
-    debug_decl(set_runaspw, SUDO_DEBUG_UTIL)
+    debug_decl(set_runaspw, SUDOERS_DEBUG_UTIL)
 
     if (*user == '#') {
 	const char *errstr;
-	uid_t uid = atoid(user + 1, NULL, NULL, &errstr);
+	uid_t uid = sudo_strtoid(user + 1, NULL, NULL, &errstr);
 	if (errstr == NULL) {
 	    if ((pw = sudo_getpwuid(uid)) == NULL)
-		pw = sudo_fakepwnam(user, runas_gr ? runas_gr->gr_gid : 0);
+		pw = sudo_fakepwnam(user, user_gid);
 	}
     }
     if (pw == NULL) {
 	if ((pw = sudo_getpwnam(user)) == NULL)
-	    fatalx(U_("unknown user: %s"), user);
+	    sudo_fatalx(U_("unknown user: %s"), user);
     }
     if (runas_pw != NULL)
 	sudo_pw_delref(runas_pw);
@@ -372,11 +374,11 @@ static void
 set_runasgr(const char *group)
 {
     struct group *gr = NULL;
-    debug_decl(set_runasgr, SUDO_DEBUG_UTIL)
+    debug_decl(set_runasgr, SUDOERS_DEBUG_UTIL)
 
     if (*group == '#') {
 	const char *errstr;
-	gid_t gid = atoid(group + 1, NULL, NULL, &errstr);
+	gid_t gid = sudo_strtoid(group + 1, NULL, NULL, &errstr);
 	if (errstr == NULL) {
 	    if ((gr = sudo_getgrgid(gid)) == NULL)
 		gr = sudo_fakegrnam(group);
@@ -384,7 +386,7 @@ set_runasgr(const char *group)
     }
     if (gr == NULL) {
 	if ((gr = sudo_getgrnam(group)) == NULL)
-	    fatalx(U_("unknown group: %s"), group);
+	    sudo_fatalx(U_("unknown group: %s"), group);
     }
     if (runas_gr != NULL)
 	sudo_gr_delref(runas_gr);
@@ -395,12 +397,12 @@ set_runasgr(const char *group)
 /* 
  * Callback for runas_default sudoers setting.
  */
-static int
-cb_runas_default(const char *user)
+static bool
+cb_runas_default(const union sudo_defs_val *sd_un)
 {
     /* Only reset runaspw if user didn't specify one. */
     if (!runas_user && !runas_group)
-        set_runaspw(user);
+        set_runaspw(sd_un->str);
     return true;
 }
 
@@ -422,7 +424,7 @@ open_sudoers(const char *sudoers, bool doedit, bool *keepopen)
     struct stat sb;
     FILE *fp = NULL;
     char *sudoers_base;
-    debug_decl(open_sudoers, SUDO_DEBUG_UTIL)
+    debug_decl(open_sudoers, SUDOERS_DEBUG_UTIL)
 
     sudoers_base = strrchr(sudoers, '/');
     if (sudoers_base != NULL)
@@ -433,20 +435,20 @@ open_sudoers(const char *sudoers, bool doedit, bool *keepopen)
 	    fp = fopen(sudoers, "r");
 	    break;
 	case SUDO_PATH_MISSING:
-	    warning("unable to stat %s", sudoers_base);
+	    sudo_warn("unable to stat %s", sudoers_base);
 	    break;
 	case SUDO_PATH_BAD_TYPE:
-	    warningx("%s is not a regular file", sudoers_base);
+	    sudo_warnx("%s is not a regular file", sudoers_base);
 	    break;
 	case SUDO_PATH_WRONG_OWNER:
-	    warningx("%s should be owned by uid %u",
+	    sudo_warnx("%s should be owned by uid %u",
 		sudoers_base, (unsigned int) sudoers_uid);
 	    break;
 	case SUDO_PATH_WORLD_WRITABLE:
-	    warningx("%s is world writable", sudoers_base);
+	    sudo_warnx("%s is world writable", sudoers_base);
 	    break;
 	case SUDO_PATH_GROUP_WRITABLE:
-	    warningx("%s should be owned by gid %u",
+	    sudo_warnx("%s should be owned by gid %u",
 		sudoers_base, (unsigned int) sudoers_gid);
 	    break;
 	default:
@@ -457,28 +459,29 @@ open_sudoers(const char *sudoers, bool doedit, bool *keepopen)
     debug_return_ptr(fp);
 }
 
-void
+bool
 init_envtables(void)
 {
-    return;
+    return(true);
 }
 
-int
+bool
 set_perms(int perm)
 {
-    return 1;
+    return true;
 }
 
-void
+bool
 restore_perms(void)
 {
+    return true;
 }
 
 void
 print_member(struct member *m)
 {
     struct sudo_command *c;
-    debug_decl(print_member, SUDO_DEBUG_UTIL)
+    debug_decl(print_member, SUDOERS_DEBUG_UTIL)
 
     if (m->negated)
 	putchar('!');
@@ -500,7 +503,7 @@ print_defaults(void)
 {
     struct defaults *d;
     struct member *m;
-    debug_decl(print_defaults, SUDO_DEBUG_UTIL)
+    debug_decl(print_defaults, SUDOERS_DEBUG_UTIL)
 
     TAILQ_FOREACH(d, &defaults, entries) {
 	(void) fputs("Defaults", stdout);
@@ -539,7 +542,7 @@ print_alias(void *v1, void *v2)
     struct alias *a = (struct alias *)v1;
     struct member *m;
     struct sudo_command *c;
-    debug_decl(print_alias, SUDO_DEBUG_UTIL)
+    debug_decl(print_alias, SUDOERS_DEBUG_UTIL)
 
     switch (a->type) {
 	case HOSTALIAS:
@@ -572,13 +575,19 @@ print_alias(void *v1, void *v2)
     debug_return_int(0);
 }
 
+#define TAG_SET(tt) \
+    ((tt) != UNSPEC && (tt) != IMPLIED)
+
+#define TAG_CHANGED(t) \
+    (TAG_SET(cs->tags.t) && cs->tags.t != tags.t)
+
 void
 print_privilege(struct privilege *priv)
 {
     struct cmndspec *cs;
     struct member *m;
     struct cmndtag tags;
-    debug_decl(print_privilege, SUDO_DEBUG_UTIL)
+    debug_decl(print_privilege, SUDOERS_DEBUG_UTIL)
 
     TAILQ_FOREACH(m, &priv->hostlist, entries) {
 	if (m != TAILQ_FIRST(&priv->hostlist))
@@ -586,8 +595,7 @@ print_privilege(struct privilege *priv)
 	print_member(m);
     }
     fputs(" = ", stdout);
-    tags.nopasswd = UNSPEC;
-    tags.noexec = UNSPEC;
+    TAGS_INIT(tags);
     TAILQ_FOREACH(cs, &priv->cmndlist, entries) {
 	if (cs != TAILQ_FIRST(&priv->cmndlist))
 	    fputs(", ", stdout);
@@ -626,10 +634,20 @@ print_privilege(struct privilege *priv)
 	if (cs->limitprivs)
 	    printf("LIMITPRIVS=%s ", cs->limitprivs);
 #endif /* HAVE_PRIV_SET */
-	if (cs->tags.nopasswd != UNSPEC && cs->tags.nopasswd != tags.nopasswd)
-	    printf("%sPASSWD: ", cs->tags.nopasswd ? "NO" : "");
-	if (cs->tags.noexec != UNSPEC && cs->tags.noexec != tags.noexec)
+	if (TAG_CHANGED(follow))
+	    printf("%sFOLLOW: ", cs->tags.follow ? "" : "NO");
+	if (TAG_CHANGED(log_input))
+	    printf("%sLOG_INPUT: ", cs->tags.log_input ? "" : "NO");
+	if (TAG_CHANGED(log_output))
+	    printf("%sLOG_OUTPUT: ", cs->tags.log_output ? "" : "NO");
+	if (TAG_CHANGED(noexec))
 	    printf("%sEXEC: ", cs->tags.noexec ? "NO" : "");
+	if (TAG_CHANGED(nopasswd))
+	    printf("%sPASSWD: ", cs->tags.nopasswd ? "NO" : "");
+	if (TAG_CHANGED(send_mail))
+	    printf("%sMAIL: ", cs->tags.send_mail ? "" : "NO");
+	if (TAG_CHANGED(setenv))
+	    printf("%sSETENV: ", cs->tags.setenv ? "" : "NO");
 	print_member(cs->cmnd);
 	memcpy(&tags, &cs->tags, sizeof(tags));
     }
@@ -642,7 +660,7 @@ print_userspecs(void)
     struct member *m;
     struct userspec *us;
     struct privilege *priv;
-    debug_decl(print_userspecs, SUDO_DEBUG_UTIL)
+    debug_decl(print_userspecs, SUDOERS_DEBUG_UTIL)
 
     TAILQ_FOREACH(us, &userspecs, entries) {
 	TAILQ_FOREACH(m, &us->users, entries) {
@@ -664,7 +682,7 @@ print_userspecs(void)
 void
 dump_sudoers(void)
 {
-    debug_decl(dump_sudoers, SUDO_DEBUG_UTIL)
+    debug_decl(dump_sudoers, SUDOERS_DEBUG_UTIL)
 
     print_defaults();
 

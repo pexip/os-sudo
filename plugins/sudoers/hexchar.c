@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,16 +19,18 @@
 #include <sys/types.h>
 #include <stdio.h>
 
-#include "missing.h"
-#include "sudo_debug.h"
-#include "fatal.h"
+#include "sudoers.h"
 
+/*
+ * Converts a two-byte hex string to decimal.
+ * Returns the decimal value or -1 for invalid input.
+ */
 int
 hexchar(const char *s)
 {
     unsigned char result[2];
     int i;
-    debug_decl(hexchar, SUDO_DEBUG_UTIL)
+    debug_decl(hexchar, SUDOERS_DEBUG_UTIL)
 
     for (i = 0; i < 2; i++) {
 	switch (s[i]) {
@@ -87,8 +89,8 @@ hexchar(const char *s)
 	    result[i] = 15;
 	    break;
 	default:
-	    /* Should not happen. */
-	    fatalx("internal error, \\x%s not in proper hex format", s);
+	    /* Invalid input. */
+	    debug_return_int(-1);
 	}
     }
     debug_return_int((result[0] << 4) | result[1]);

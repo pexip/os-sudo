@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2014 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,8 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDO_PLUGIN_INT_H
-#define _SUDO_PLUGIN_INT_H
+#ifndef SUDO_PLUGIN_INT_H
+#define SUDO_PLUGIN_INT_H
 
 /*
  * All plugin structures start with a type and a version.
@@ -26,13 +26,16 @@ struct generic_plugin {
     /* the rest depends on the type... */
 };
 
+typedef int (*sudo_conv_1_7_t)(int num_msgs,
+    const struct sudo_conv_message msgs[], struct sudo_conv_reply replies[]);
+
 /*
  * Backwards-compatible structures for API bumps.
  */
 struct policy_plugin_1_0 {
     unsigned int type;
     unsigned int version;
-    int (*open)(unsigned int version, sudo_conv_t conversation,
+    int (*open)(unsigned int version, sudo_conv_1_7_t conversation,
 	sudo_printf_t sudo_printf, char * const settings[],
 	char * const user_info[], char * const user_env[]);
     void (*close)(int exit_status, int error); /* wait status or error */
@@ -49,7 +52,7 @@ struct policy_plugin_1_0 {
 struct io_plugin_1_0 {
     unsigned int type;
     unsigned int version;
-    int (*open)(unsigned int version, sudo_conv_t conversation,
+    int (*open)(unsigned int version, sudo_conv_1_7_t conversation,
         sudo_printf_t sudo_printf, char * const settings[],
         char * const user_info[], int argc, char * const argv[],
         char * const user_env[]);
@@ -64,7 +67,7 @@ struct io_plugin_1_0 {
 struct io_plugin_1_1 {
     unsigned int type;
     unsigned int version;
-    int (*open)(unsigned int version, sudo_conv_t conversation,
+    int (*open)(unsigned int version, sudo_conv_1_7_t conversation,
 	sudo_printf_t sudo_printf, char * const settings[],
 	char * const user_info[], char * const command_info[],
 	int argc, char * const argv[], char * const user_env[]);
@@ -82,9 +85,12 @@ struct io_plugin_1_1 {
  */
 struct plugin_container {
     TAILQ_ENTRY(plugin_container) entries;
+    struct sudo_conf_debug_file_list *debug_files;
     const char *name;
+    char *path;
     char * const *options;
     void *handle;
+    int debug_instance;
     union {
 	struct generic_plugin *generic;
 	struct policy_plugin *policy;
@@ -100,10 +106,12 @@ extern struct plugin_container policy_plugin;
 extern struct plugin_container_list io_plugins;
 
 int sudo_conversation(int num_msgs, const struct sudo_conv_message msgs[],
+    struct sudo_conv_reply replies[], struct sudo_conv_callback *callback);
+int sudo_conversation_1_7(int num_msgs, const struct sudo_conv_message msgs[],
     struct sudo_conv_reply replies[]);
-int _sudo_printf(int msg_type, const char *fmt, ...);
+int sudo_conversation_printf(int msg_type, const char *fmt, ...);
 
 bool sudo_load_plugins(struct plugin_container *policy_plugin,
     struct plugin_container_list *io_plugins);
 
-#endif /* _SUDO_PLUGIN_INT_H */
+#endif /* SUDO_PLUGIN_INT_H */

@@ -1,5 +1,5 @@
 .\"
-.\" Copyright (c) 1994-1996, 1998-2005, 2007-2014
+.\" Copyright (c) 1994-1996, 1998-2005, 2007-2016
 .\"	Todd C. Miller <Todd.Miller@courtesan.com>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -19,7 +19,7 @@
 .\" Agency (DARPA) and Air Force Research Laboratory, Air Force
 .\" Materiel Command, USAF, under agreement number F39502-99-1-0512.
 .\"
-.Dd February 15, 2014
+.Dd January 19, 2016
 .Dt SUDO @mansectsu@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -72,18 +72,22 @@
 .Op Fl u Ar user
 .Ar
 .Sh DESCRIPTION
-.Nm sudo
+.Nm
 allows a permitted user to execute a
 .Ar command
 as the superuser or another user, as specified by the security
 policy.
+The invoking user's real
+.No ( Em not
+effective) user ID is used to determine the user name with which
+to query the security policy.
 .Pp
-.Nm sudo
+.Nm
 supports a plugin architecture for security policies and input/output
 logging.
 Third parties can develop and distribute their own policy and I/O
 logging plugins to work seamlessly with the
-.Nm sudo
+.Nm
 front end.
 The default security policy is
 .Em sudoers ,
@@ -96,11 +100,11 @@ section for more information.
 .Pp
 The security policy determines what privileges, if any, a user has
 to run
-.Nm sudo .
+.Nm .
 The policy may require that users authenticate themselves with a
 password or another authentication mechanism.
 If authentication is required,
-.Nm sudo
+.Nm
 will exit if the user's password is not entered within a configurable
 time limit.
 This limit is policy-specific; the default password prompt timeout
@@ -112,7 +116,7 @@ minutes.
 .Pp
 Security policies may support credential caching to allow the user
 to run
-.Nm sudo
+.Nm
 again for a period of time without requiring authentication.
 The
 .Em sudoers
@@ -121,7 +125,7 @@ policy caches credentials for
 minutes, unless overridden in
 .Xr sudoers @mansectform@ .
 By running
-.Nm sudo
+.Nm
 with the
 .Fl v
 option, a user can update the cached credentials without running a
@@ -134,7 +138,7 @@ the
 option (described below), is implied.
 .Pp
 Security policies may log successful and failed attempts to use
-.Nm sudo .
+.Nm .
 If an I/O plugin is configured, the running command's input and
 output may be logged as well.
 .Pp
@@ -142,7 +146,7 @@ The options are as follows:
 .Bl -tag -width Fl
 .It Fl A , -askpass
 Normally, if
-.Nm sudo
+.Nm
 requires a password, it will read it from the user's terminal.
 If the
 .Fl A Pq Em askpass
@@ -164,7 +168,7 @@ Path askpass /usr/X11R6/bin/ssh-askpass
 .Ed
 .Pp
 If no askpass program is available,
-.Nm sudo
+.Nm
 will exit with an error.
 .It Fl a Ar type , Fl -auth-type Ns = Ns Ar type
 Use the specified BSD authentication
@@ -181,7 +185,7 @@ This option is only available on systems that support BSD authentication.
 Run the given command in the background.
 Note that it is not possible to use shell job control to manipulate
 background processes started by
-.Nm sudo .
+.Nm .
 Most interactive commands will fail to work properly in background
 mode.
 .It Fl C Ar num , Fl -close-from Ns = Ns Ar num
@@ -190,7 +194,7 @@ Close all file descriptors greater than or equal to
 before executing a command.
 Values less than three are not permitted.
 By default,
-.Nm sudo
+.Nm
 will close all open file descriptors other than standard input,
 standard output and standard error when executing a command.
 The security policy may restrict the user's ability to use this option.
@@ -218,7 +222,7 @@ is
 .Cm - ,
 the default login class of the target user will be used.
 Otherwise, the command must be run as the superuser (user ID 0), or
-.Nm sudo
+.Nm
 must be run from a shell that is already running as the superuser.
 If the command is being run as a login shell, additional
 .Pa /etc/login.conf
@@ -265,12 +269,28 @@ If they have been modified, the temporary files are copied back to
 their original location and the temporary versions are removed.
 .El
 .Pp
+To help prevent the editing of unauthorized files, the following
+restrictions are enforced unless explicitly allowed by the security policy:
+.Bl -bullet -offset 4
+.It
+Symbolic links may not be edited (version 1.8.15 and higher).
+.It
+Symbolic links along the path to be edited are not followed when the
+parent directory is writable by the invoking user unless that user
+is root (version 1.8.16 and higher).
+.It
+Files located in a directory that is writable by the invoking user may
+not be edited unless that user is root (version 1.8.16 and higher).
+.El
+.Pp
+Users are never allowed to edit device special files.
+.Pp
 If the specified file does not exist, it will be created.
 Note that unlike most commands run by
 .Em sudo ,
 the editor is run with the invoking user's environment unmodified.
 If, for some reason,
-.Nm sudo
+.Nm
 is unable to update a file with its edited version, the user will
 receive a warning and the edited copy will remain in a temporary
 file.
@@ -328,13 +348,13 @@ via the shell's
 .Fl c
 option.
 If no command is specified, an interactive shell is executed.
-.Nm sudo
+.Nm
 attempts to change to that user's home directory before running the
 shell.
 The command is run with an environment similar to the one
 a user would receive at log in.
 The
-.Em Command Environment
+.Em Command environment
 section in the
 .Xr sudoers @mansectform@
 manual documents how the
@@ -352,21 +372,21 @@ Not all security policies support credential caching.
 .It Fl k , -reset-timestamp
 When used without a command, invalidates the user's cached credentials.
 In other words, the next time
-.Nm sudo
+.Nm
 is run a password will be required.
 This option does not require a password and was added to allow a
 user to revoke
-.Nm sudo
+.Nm
 permissions from a
 .Pa .logout
 file.
 .Pp
 When used in conjunction with a command or an option that may require
 a password, this option will cause
-.Nm sudo
+.Nm
 to ignore the user's cached credentials.
 As a result,
-.Nm sudo
+.Nm
 will prompt for a password (if one is required by the security
 policy) and will not update the user's cached credentials.
 .Pp
@@ -390,12 +410,12 @@ arguments.
 If
 .Ar command
 is specified but not allowed,
-.Nm sudo
+.Nm
 will exit with a status value of 1.
 .It Fl n , -non-interactive
 Avoid prompting the user for input of any kind.
 If a password is required for the command to run,
-.Nm sudo
+.Nm
 will display an error message and exit.
 .It Fl P , -preserve-groups
 Preserve the invoking user's group vector unaltered.
@@ -490,7 +510,7 @@ privilege on the current host to use this option.
 .It Fl u Ar user , Fl -user Ns = Ns Ar user
 Run the command as a user other than the default target user
 (usually
-.Em root ).
+.Em root ) .
 The
 .Ar user
 may be either a user name or a numeric user ID
@@ -514,13 +534,13 @@ option is not set.
 Other security policies may not support this.
 .It Fl V , -version
 Print the
-.Nm sudo
+.Nm
 version string as well as the version string of the security
 policy plugin and any I/O plugins.
 If the invoking user is already root the
 .Fl V
 option will display the arguments passed to configure when
-.Nm sudo
+.Nm
 was built and plugins may display more verbose information such as
 default options.
 .It Fl v , -validate
@@ -529,7 +549,7 @@ if necessary.
 For the
 .Em sudoers
 plugin, this extends the
-.Nm sudo
+.Nm
 timeout for another
 .Li @timeout@
 minutes by default, but does not run a command.
@@ -538,7 +558,7 @@ Not all security policies support cached credentials.
 The
 .Fl -
 option indicates that
-.Nm sudo
+.Nm
 should stop processing command line arguments.
 .El
 .Pp
@@ -568,7 +588,7 @@ See
 for more information.
 .Sh COMMAND EXECUTION
 When
-.Nm sudo
+.Nm
 executes a command, the security policy specifies the execution
 environment for the command.
 Typically, the real and effective user and group and IDs are set to
@@ -605,21 +625,21 @@ scheduling priority (aka nice value)
 .El
 .Ss Process model
 When
-.Nm sudo
+.Nm
 runs a command, it calls
 .Xr fork 2 ,
 sets up the execution environment as described above, and calls the
 .Xr execve
 system call in the child process.
 The main
-.Nm sudo
+.Nm
 process waits until the command has completed, then passes the
 command's exit status to the security policy's close function and exits.
 If an I/O logging plugin is configured or if the security policy
 explicitly requests it, a new  pseudo-terminal
 .Pq Dq pty
 is created and a second
-.Nm sudo
+.Nm
 process is used to relay job control signals between the user's
 existing pty and the new pty the command is being run in.
 This extra process makes it possible to, for example, suspend
@@ -629,7 +649,7 @@ Without it, the command would be in what POSIX terms an
 and it would not receive any job control signals.
 As a special case, if the policy plugin does not define a close
 function and no pty is required,
-.Nm sudo
+.Nm
 will execute the command directly instead of calling
 .Xr fork 2
 first.
@@ -648,20 +668,19 @@ and
 are enabled by default on systems using PAM.
 .Ss Signal handling
 When the command is run as a child of the
-.Nm sudo
+.Nm
 process,
-.Nm sudo
+.Nm
 will relay signals it receives to the command.
-Unless the command is being run in a new pty, the
-.Dv SIGHUP ,
+The
 .Dv SIGINT
 and
 .Dv SIGQUIT
-signals are not relayed unless they are sent by a user process,
-not the kernel.
-Otherwise, the command would receive
+signals are only relayed when the command is being run in a new pty
+or when the signal was sent by a user process, not the kernel.
+This prevents the command from receiving
 .Dv SIGINT
-twice every time the user entered control-C.
+twice each time the user enters control-C.
 Some signals, such as
 .Dv SIGSTOP
 and
@@ -672,10 +691,10 @@ As a general rule,
 should be used instead of
 .Dv SIGSTOP
 when you wish to suspend a command being run by
-.Nm sudo .
+.Nm .
 .Pp
 As a special case,
-.Nm sudo
+.Nm
 will not relay signals that were sent by the command it is running.
 This prevents the command from accidentally killing itself.
 On some systems, the
@@ -685,7 +704,7 @@ command sends
 to all non-system processes other than itself before rebooting
 the system.
 This prevents
-.Nm sudo
+.Nm
 from relaying the
 .Dv SIGTERM
 signal it received back to
@@ -693,14 +712,14 @@ signal it received back to
 which might then exit before the system was actually rebooted,
 leaving it in a half-dead state similar to single user mode.
 Note, however, that this check only applies to the command run by
-.Nm sudo
+.Nm
 and not any other processes that the command may create.
 As a result, running a script that calls
 .Xr reboot @mansectsu@
 or
 .Xr shutdown @mansectsu@
 via
-.Nm sudo
+.Nm
 may cause the system to end up in this undefined state unless the
 .Xr reboot @mansectsu@
 or
@@ -716,7 +735,7 @@ defined a
 .Fn close
 function, set a command timeout or required that the command be
 run in a new pty,
-.Nm sudo
+.Nm
 may execute the command directly instead of running it as a child process.
 .Ss Plugins
 Plugins may be specified via
@@ -726,14 +745,14 @@ directives in the
 file.
 They may be loaded as dynamic shared objects (on systems that support them),
 or compiled directly into the
-.Nm sudo
+.Nm
 binary.
 If no
 .Xr sudo.conf @mansectform@
 file is present, or it contains no
 .Li Plugin
 lines,
-.Nm sudo
+.Nm
 will use the traditional
 .Em sudoers
 security policy and I/O logging.
@@ -744,27 +763,30 @@ manual for details of the
 file and the
 .Xr sudo_plugin @mansectsu@
 manual for more information about the
-.Nm sudo
+.Nm
 plugin architecture.
 .Sh EXIT VALUE
-Upon successful execution of a program, the exit status from
-.Em sudo
-will simply be the exit status of the program that was executed.
+Upon successful execution of a command, the exit status from
+.Nm
+will be the exit status of the program that was executed.
+If the command terminated due to receipt of a signal,
+.Nm
+will send itself the signal that terminated the command.
 .Pp
 Otherwise,
-.Nm sudo
+.Nm
 exits with a value of 1 if there is a configuration/permission
 problem or if
-.Nm sudo
+.Nm
 cannot execute the given command.
-In the latter case the error string is printed to the standard error.
+In the latter case, the error string is printed to the standard error.
 If
-.Nm sudo
+.Nm
 cannot
 .Xr stat 2
 one or more entries in the user's
 .Ev PATH ,
-an error is printed on stderr.
+an error is printed to the standard error.
 (If the directory does not exist or if it is not really a directory,
 the entry is ignored and no error is printed.)
 This should not happen under normal circumstances.
@@ -777,11 +799,11 @@ your
 .Ev PATH
 is on a machine that is currently unreachable.
 .Sh SECURITY NOTES
-.Nm sudo
+.Nm
 tries to be safe when executing external commands.
 .Pp
 To prevent command spoofing,
-.Nm sudo
+.Nm
 checks "." and "" (both denoting current directory) last when
 searching for a command in the user's
 .Ev PATH
@@ -792,11 +814,20 @@ Note, however, that the actual
 environment variable is
 .Em not
 modified and is passed unchanged to the program that
-.Nm sudo
+.Nm
 executes.
 .Pp
+Users should
+.Em never
+be granted
+.Nm
+privileges to execute files that are writable by the user or
+that reside in a directory that is writable by the user.
+If the user can modify or replace the command there is no way
+to limit what additional commands they can run.
+.Pp
 Please note that
-.Nm sudo
+.Nm
 will normally only log the command it explicitly runs.
 If a user runs a command such as
 .Li sudo su
@@ -810,20 +841,22 @@ most editors).
 If I/O logging is enabled, subsequent commands will have their input and/or
 output logged, but there will not be traditional logs for those commands.
 Because of this, care must be taken when giving users access to commands via
-.Nm sudo
+.Nm
 to verify that the command does not inadvertently give the user an
 effective root shell.
 For more information, please see the
-.Em PREVENTING SHELL ESCAPES
+.Em Preventing shell escapes
 section in
 .Xr sudoers @mansectform@ .
 .Pp
 To prevent the disclosure of potentially sensitive information,
-.Nm sudo
+.Nm
 disables core dumps by default while it is executing (they are
 re-enabled for the command that is run).
+This historical practice dates from a time when most operating
+systems allowed setuid processes to dump core by default.
 To aid in debugging
-.Nm sudo
+.Nm
 crashes, you may wish to re-enable core dumps by setting
 .Dq disable_coredump
 to false in the
@@ -837,7 +870,7 @@ See the
 .Xr sudo.conf @mansectform@
 manual for more information.
 .Sh ENVIRONMENT
-.Nm sudo
+.Nm
 utilizes the following environment variables.
 The security policy has control over the actual content of the command's
 environment.
@@ -851,30 +884,57 @@ nor
 .Ev VISUAL
 is set.
 .It Ev MAIL
-In
+Set to the mail spool of the target user when the
 .Fl i
-mode or when
+option is specified or when
 .Em env_reset
 is enabled in
-.Em sudoers ,
-set to the mail spool of the target user.
+.Em sudoers
+(unless
+.Ev MAIL
+is present in the
+.Em env_keep
+list).
 .It Ev HOME
-Set to the home directory of the target user if
+Set to the home directory of the target user when the
 .Fl i
 or
 .Fl H
-are specified,
-.Em env_reset
-or
-.Em always_set_home
-are set in
-.Em sudoers ,
-or when the
+options are specified, when the
 .Fl s
 option is specified and
 .Em set_home
 is set in
-.Em sudoers .
+.Em sudoers ,
+when
+.Em always_set_home
+is enabled in
+.Em sudoers ,
+or when
+.Em env_reset
+is enabled in
+.Em sudoers
+and
+.Em HOME
+is not present in the
+.Em env_keep
+list.
+.It Ev LOGNAME
+Set to the login name of the target user when the
+.Fl i
+option is specified, when the
+.Em set_logname
+option is enabled in
+.Em sudoers
+or when the
+.Em env_reset
+option is enabled in
+.Em sudoers
+(unless
+.Ev LOGNAME
+is present in the
+.Em env_keep
+list).
 .It Ev PATH
 May be overridden by the security policy.
 .It Ev SHELL
@@ -905,9 +965,12 @@ Set to the user ID of the user who invoked sudo.
 .It Ev SUDO_USER
 Set to the login name of the user who invoked sudo.
 .It Ev USER
-Set to the target user (root unless the
-.Fl u
-option is specified).
+Set to the same value as
+.Ev LOGNAME ,
+described above.
+.It Ev USERNAME
+Same as
+.Ev USER .
 .It Ev VISUAL
 Default editor to use in
 .Fl e
@@ -918,7 +981,7 @@ is not set.
 .Sh FILES
 .Bl -tag -width 24n
 .It Pa @sysconfdir@/sudo.conf
-.Nm sudo
+.Nm
 front end configuration
 .El
 .Sh EXAMPLES
@@ -940,18 +1003,18 @@ To edit the
 .Pa index.html
 file as user www:
 .Bd -literal -offset indent
-$ sudo -u www vi ~www/htdocs/index.html
+$ sudoedit -u www ~www/htdocs/index.html
 .Ed
 .Pp
 To view system logs only accessible to root and users in the adm
 group:
 .Bd -literal -offset indent
-$ sudo -g adm view /var/log/syslog
+$ sudo -g adm more /var/log/syslog
 .Ed
 .Pp
 To run an editor as jim with a different primary group:
 .Bd -literal -offset indent
-$ sudo -u jim -g audio vi ~jim/sound.txt
+$ sudoedit -u jim -g audio ~jim/sound.txt
 .Ed
 .Pp
 To shut down a machine:
@@ -978,26 +1041,26 @@ $ sudo sh -c "cd /home ; du -s * | sort -rn > USAGE"
 .Xr visudo @mansectsu@
 .Sh HISTORY
 See the HISTORY file in the
-.Nm sudo
-distribution (http://www.sudo.ws/sudo/history.html) for a brief
+.Nm
+distribution (https://www.sudo.ws/history.html) for a brief
 history of sudo.
 .Sh AUTHORS
 Many people have worked on
-.Nm sudo
+.Nm
 over the years; this version consists of code written primarily by:
 .Bd -ragged -offset indent
-Todd C. Miller
+.An Todd C. Miller
 .Ed
 .Pp
 See the CONTRIBUTORS file in the
-.Nm sudo
-distribution (http://www.sudo.ws/sudo/contributors.html) for an
+.Nm
+distribution (https://www.sudo.ws/contributors.html) for an
 exhaustive list of people who have contributed to
-.Nm sudo .
+.Nm .
 .Sh CAVEATS
 There is no easy way to prevent a user from gaining a root shell
 if that user is allowed to run arbitrary commands via
-.Nm sudo .
+.Nm .
 Also, many programs (such as editors) allow the user to run commands
 via shell escapes, thus avoiding
 .Nm sudo Ns 's
@@ -1022,25 +1085,25 @@ Please see the
 section for more information.
 .Pp
 Running shell scripts via
-.Nm sudo
+.Nm
 can expose the same kernel bugs that make setuid shell scripts
 unsafe on some operating systems (if your OS has a /dev/fd/ directory,
 setuid shell scripts are generally safe).
 .Sh BUGS
 If you feel you have found a bug in
-.Nm sudo ,
-please submit a bug report at http://www.sudo.ws/sudo/bugs/
+.Nm ,
+please submit a bug report at https://bugzilla.sudo.ws/
 .Sh SUPPORT
 Limited free support is available via the sudo-users mailing list,
-see http://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or
+see https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or
 search the archives.
 .Sh DISCLAIMER
-.Nm sudo
+.Nm
 is provided
 .Dq AS IS
 and any express or implied warranties, including, but not limited
 to, the implied warranties of merchantability and fitness for a
 particular purpose are disclaimed.
 See the LICENSE file distributed with
-.Nm sudo
-or http://www.sudo.ws/sudo/license.html for complete details.
+.Nm
+or https://www.sudo.ws/license.html for complete details.

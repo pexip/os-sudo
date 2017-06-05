@@ -18,18 +18,8 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -41,7 +31,6 @@
 
 #define SUDO_ERROR_WRAP 0
 
-#define _SUDO_MAIN
 #include "sudoers.h"
 #include "def_data.c"
 
@@ -75,20 +64,23 @@ do_check(char *dir_in, char *file_in, char *tdir_out, char *tfile_out)
     time(&now);
     timeptr = localtime(&now);
     if (timeptr == NULL)
-	fatalx("localtime returned NULL");
+	sudo_fatalx("localtime returned NULL");
     strftime(dir_out, sizeof(dir_out), tdir_out, timeptr);
     strftime(file_out, sizeof(file_out), tfile_out, timeptr);
 
     path = expand_iolog_path(NULL, dir_in, file_in, &slash);
+    if (path == NULL)
+	sudo_fatalx("unable to expand I/O log path");
     *slash = '\0';
     if (strcmp(path, dir_out) != 0) {
-	warningx("%s: expected %s, got %s", dir_in, dir_out, path);
+	sudo_warnx("%s: expected %s, got %s", dir_in, dir_out, path);
 	error = 1;
     }
     if (strcmp(slash + 1, file_out) != 0) {
-	warningx("%s: expected %s, got %s", file_in, file_out, slash + 1);
+	sudo_warnx("%s: expected %s, got %s", file_in, file_out, slash + 1);
 	error = 1;
     }
+    free(path);
 
     return error;
 }
@@ -116,7 +108,7 @@ main(int argc, char *argv[])
 
     fp = fopen(argv[1], "r");
     if (fp == NULL)
-	fatalx("unable to open %s", argv[1]);
+	sudo_fatalx("unable to open %s", argv[1]);
 
     memset(&pw, 0, sizeof(pw));
     memset(&rpw, 0, sizeof(rpw));
@@ -152,9 +144,9 @@ main(int argc, char *argv[])
 	    user_name = strdup(line);
 	    break;
 	case 2:
-	    user_gid = (gid_t)atoid(line, NULL, NULL, &errstr);
+	    user_gid = (gid_t)sudo_strtoid(line, NULL, NULL, &errstr);
 	    if (errstr != NULL)
-		fatalx("group ID %s: %s", line, errstr);
+		sudo_fatalx("group ID %s: %s", line, errstr);
 	    break;
 	case 3:
 	    if (runas_pw->pw_name != NULL)
@@ -162,26 +154,38 @@ main(int argc, char *argv[])
 	    runas_pw->pw_name = strdup(line);
 	    break;
 	case 4:
-	    runas_pw->pw_gid = (gid_t)atoid(line, NULL, NULL, &errstr);
+	    runas_pw->pw_gid = (gid_t)sudo_strtoid(line, NULL, NULL, &errstr);
 	    if (errstr != NULL)
-		fatalx("group ID %s: %s", line, errstr);
+		sudo_fatalx("group ID %s: %s", line, errstr);
 	    break;
 	case 5:
+	    if (user_shost != NULL)
+		free(user_shost);
 	    user_shost = strdup(line);
 	    break;
 	case 6:
+	    if (user_base != NULL)
+		free(user_base);
 	    user_base = strdup(line);
 	    break;
 	case 7:
+	    if (dir_in != NULL)
+		free(dir_in);
 	    dir_in = strdup(line);
 	    break;
 	case 8:
+	    if (file_in != NULL)
+		free(file_in);
 	    file_in = strdup(line);
 	    break;
 	case 9:
+	    if (dir_out != NULL)
+		free(dir_out);
 	    dir_out = strdup(line);
 	    break;
 	case 10:
+	    if (file_out != NULL)
+		free(file_out);
 	    file_out = strdup(line);
 	    break;
 	case 11:
@@ -189,7 +193,7 @@ main(int argc, char *argv[])
 	    tests++;
 	    break;
 	default:
-	    fatalx("internal error, invalid state %d", state);
+	    sudo_fatalx("internal error, invalid state %d", state);
 	}
 	state = (state + 1) % MAX_STATE;
     }
@@ -203,7 +207,9 @@ main(int argc, char *argv[])
     exit(errors);
 }
 
-void io_nextid(char *iolog_dir, char *fallback, char id[7])
+bool
+io_nextid(char *iolog_dir, char *fallback, char id[7])
 {
     memcpy(id, sessid, sizeof(sessid));
+    return true;
 }

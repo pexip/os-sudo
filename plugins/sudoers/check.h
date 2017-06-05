@@ -19,15 +19,15 @@
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
  */
 
-#ifndef _SUDOERS_CHECK_H
-#define _SUDOERS_CHECK_H
+#ifndef SUDOERS_CHECK_H
+#define SUDOERS_CHECK_H
 
 /* Status codes for timestamp_status() */
 #define TS_CURRENT		0
 #define TS_OLD			1
 #define TS_MISSING		2
-#define TS_NOFILE		3
-#define TS_ERROR		4
+#define TS_ERROR		3
+#define TS_FATAL		4
 
 /*
  * Time stamps are now stored in a single file which contains multiple
@@ -40,6 +40,7 @@
 #define TS_GLOBAL		0x01
 #define TS_TTY			0x02
 #define TS_PPID			0x03
+#define TS_LOCKEXCL		0x04
 
 /* Time stamp flags */
 #define TS_DISABLED		0x01	/* entry disabled */
@@ -60,9 +61,12 @@ struct timestamp_entry {
     } u;
 };
 
+void *timestamp_open(const char *user, pid_t sid);
+void  timestamp_close(void *vcookie);
+bool  timestamp_lock(void *vcookie, struct passwd *pw);
+bool  timestamp_update(void *vcookie, struct passwd *pw);
+int   timestamp_status(void *vcookie, struct passwd *pw);
 bool  already_lectured(int status);
-bool  update_timestamp(struct passwd *pw);
-int   build_timestamp(struct passwd *pw);
-int   timestamp_status(struct passwd *pw);
+int   set_lectured(void);
 
-#endif /* _SUDOERS_CHECK_H */
+#endif /* SUDOERS_CHECK_H */

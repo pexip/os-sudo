@@ -14,8 +14,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDOERS_PWUTIL_H
-#define _SUDOERS_PWUTIL_H
+#ifndef SUDOERS_PWUTIL_H
+#define SUDOERS_PWUTIL_H
 
 #define ptr_to_item(p) ((struct cache_item *)((char *)p - offsetof(struct cache_item_##p, p)))
 
@@ -24,6 +24,7 @@
  */
 struct cache_item {
     unsigned int refcnt;
+    char registry[16];
     /* key */
     union {
 	uid_t uid;
@@ -35,12 +36,13 @@ struct cache_item {
 	struct passwd *pw;
 	struct group *gr;
 	struct group_list *grlist;
+	struct gid_list *gidlist;
     } d;
 };
 
 /*
  * Container structs to simpify size and offset calculations and guarantee
- * proper aligment of struct passwd, group and group_list.
+ * proper aligment of struct passwd, group, gid_list and group_list.
  */
 struct cache_item_pw {
     struct cache_item cache;
@@ -58,8 +60,15 @@ struct cache_item_grlist {
     /* actually bigger */
 };
 
+struct cache_item_gidlist {
+    struct cache_item cache;
+    struct gid_list gidlist;
+    /* actually bigger */
+};
+
 struct cache_item *sudo_make_gritem(gid_t gid, const char *group);
-struct cache_item *sudo_make_grlist_item(const struct passwd *pw, char * const *groups, char * const *gids);
+struct cache_item *sudo_make_grlist_item(const struct passwd *pw, char * const *groups);
+struct cache_item *sudo_make_gidlist_item(const struct passwd *pw, char * const *gids);
 struct cache_item *sudo_make_pwitem(uid_t uid, const char *user);
 
-#endif /* _SUDOERS_PWUTIL_H */
+#endif /* SUDOERS_PWUTIL_H */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,23 +20,14 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #ifdef TIME_WITH_SYS_TIME
 # include <time.h>
 #endif
@@ -51,6 +42,7 @@
 
 static void *group_handle;
 static struct sudoers_group_plugin *group_plugin;
+const char *path_plugin_dir = _PATH_SUDO_PLUGIN_DIR;
 
 /*
  * Load the specified plugin and run its init function.
@@ -64,56 +56,58 @@ group_plugin_load(char *plugin_info)
     char *args, path[PATH_MAX];
     char **argv = NULL;
     int len, rc = -1;
-    debug_decl(group_plugin_load, SUDO_DEBUG_UTIL)
+    debug_decl(group_plugin_load, SUDOERS_DEBUG_UTIL)
 
     /*
      * Fill in .so path and split out args (if any).
      */
     if ((args = strpbrk(plugin_info, " \t")) != NULL) {
 	len = snprintf(path, sizeof(path), "%s%.*s",
-	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "",
+	    (*plugin_info != '/') ? path_plugin_dir : "",
 	    (int)(args - plugin_info), plugin_info);
 	args++;
     } else {
 	len = snprintf(path, sizeof(path), "%s%s",
-	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "", plugin_info);
+	    (*plugin_info != '/') ? path_plugin_dir : "", plugin_info);
     }
     if (len <= 0 || (size_t)len >= sizeof(path)) {
 	errno = ENAMETOOLONG;
-	warning("%s%s",
-	    (*plugin_info != '/') ? _PATH_SUDO_PLUGIN_DIR : "", plugin_info);
+	sudo_warn("%s%s",
+	    (*plugin_info != '/') ? path_plugin_dir : "", plugin_info);
 	goto done;
     }
 
     /* Sanity check plugin path. */
     if (stat(path, &sb) != 0) {
-	warning("%s", path);
+	sudo_warn("%s", path);
 	goto done;
     }
     if (sb.st_uid != ROOT_UID) {
-	warningx(U_("%s must be owned by uid %d"), path, ROOT_UID);
+	sudo_warnx(U_("%s must be owned by uid %d"), path, ROOT_UID);
 	goto done;
     }
     if ((sb.st_mode & (S_IWGRP|S_IWOTH)) != 0) {
-	warningx(U_("%s must only be writable by owner"), path);
+	sudo_warnx(U_("%s must only be writable by owner"), path);
 	goto done;
     }
 
     /* Open plugin and map in symbol. */
     group_handle = sudo_dso_load(path, SUDO_DSO_LAZY|SUDO_DSO_GLOBAL);
     if (!group_handle) {
-	warningx(U_("unable to load %s: %s"), path, sudo_dso_strerror());
+	const char *errstr = sudo_dso_strerror();
+	sudo_warnx(U_("unable to load %s: %s"), path,
+	    errstr ? errstr : "unknown error");
 	goto done;
     }
     group_plugin = sudo_dso_findsym(group_handle, "group_plugin");
     if (group_plugin == NULL) {
-	warningx(U_("unable to find symbol \"group_plugin\" in %s"), path);
+	sudo_warnx(U_("unable to find symbol \"group_plugin\" in %s"), path);
 	goto done;
     }
 
-    if (GROUP_API_VERSION_GET_MAJOR(group_plugin->version) != GROUP_API_VERSION_MAJOR) {
-	warningx(U_("%s: incompatible group plugin major version %d, expected %d"),
-	    path, GROUP_API_VERSION_GET_MAJOR(group_plugin->version),
+    if (SUDO_API_VERSION_GET_MAJOR(group_plugin->version) != GROUP_API_VERSION_MAJOR) {
+	sudo_warnx(U_("%s: incompatible group plugin major version %d, expected %d"),
+	    path, SUDO_API_VERSION_GET_MAJOR(group_plugin->version),
 	    GROUP_API_VERSION_MAJOR);
 	goto done;
     }
@@ -124,7 +118,7 @@ group_plugin_load(char *plugin_info)
     if (args != NULL) {
 	int ac = 0;
 	bool wasblank = true;
-	char *cp;
+	char *cp, *last;
 
         for (cp = args; *cp != '\0'; cp++) {
             if (isblank((unsigned char)*cp)) {
@@ -134,10 +128,14 @@ group_plugin_load(char *plugin_info)
                 ac++;
             }
         }
-	if (ac != 0) 	{
-	    argv = emalloc2(ac, sizeof(char *));
+	if (ac != 0) {
+	    argv = reallocarray(NULL, ac, sizeof(char *));
+	    if (argv == NULL) {
+		sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+		goto done;
+	    }
 	    ac = 0;
-	    for ((cp = strtok(args, " \t")); cp; (cp = strtok(NULL, " \t")))
+	    for ((cp = strtok_r(args, " \t", &last)); cp != NULL; (cp = strtok_r(NULL, " \t", &last)))
 		argv[ac++] = cp;
 	}
     }
@@ -145,7 +143,7 @@ group_plugin_load(char *plugin_info)
     rc = (group_plugin->init)(GROUP_API_VERSION, sudo_printf, argv);
 
 done:
-    efree(argv);
+    free(argv);
 
     if (rc != true) {
 	if (group_handle != NULL) {
@@ -155,13 +153,13 @@ done:
 	}
     }
 
-    debug_return_bool(rc);
+    debug_return_int(rc);
 }
 
 void
 group_plugin_unload(void)
 {
-    debug_decl(group_plugin_unload, SUDO_DEBUG_UTIL)
+    debug_decl(group_plugin_unload, SUDOERS_DEBUG_UTIL)
 
     if (group_plugin != NULL) {
 	(group_plugin->cleanup)();
@@ -178,11 +176,11 @@ int
 group_plugin_query(const char *user, const char *group,
     const struct passwd *pwd)
 {
-    debug_decl(group_plugin_query, SUDO_DEBUG_UTIL)
+    debug_decl(group_plugin_query, SUDOERS_DEBUG_UTIL)
 
     if (group_plugin == NULL)
-	debug_return_bool(false);
-    debug_return_bool((group_plugin->query)(user, group, pwd));
+	debug_return_int(false);
+    debug_return_int((group_plugin->query)(user, group, pwd));
 }
 
 #else /* !HAVE_DLOPEN && !HAVE_SHL_LOAD */
@@ -194,14 +192,14 @@ group_plugin_query(const char *user, const char *group,
 int
 group_plugin_load(char *plugin_info)
 {
-    debug_decl(group_plugin_load, SUDO_DEBUG_UTIL)
-    debug_return_bool(false);
+    debug_decl(group_plugin_load, SUDOERS_DEBUG_UTIL)
+    debug_return_int(false);
 }
 
 void
 group_plugin_unload(void)
 {
-    debug_decl(group_plugin_unload, SUDO_DEBUG_UTIL)
+    debug_decl(group_plugin_unload, SUDOERS_DEBUG_UTIL)
     debug_return;
 }
 
@@ -209,8 +207,24 @@ int
 group_plugin_query(const char *user, const char *group,
     const struct passwd *pwd)
 {
-    debug_decl(group_plugin_query, SUDO_DEBUG_UTIL)
-    debug_return_bool(false);
+    debug_decl(group_plugin_query, SUDOERS_DEBUG_UTIL)
+    debug_return_int(false);
 }
 
 #endif /* HAVE_DLOPEN || HAVE_SHL_LOAD */
+
+/*
+ * Group plugin sudoers callback.
+ */
+bool
+cb_group_plugin(const union sudo_defs_val *sd_un)
+{
+    bool rc = true;
+    debug_decl(cb_group_plugin, SUDOERS_DEBUG_PLUGIN)
+
+    /* Unload any existing group plugin before loading a new one. */
+    group_plugin_unload();
+    if (sd_un->str != NULL)
+	rc = group_plugin_load(sd_un->str);
+    debug_return_bool(rc);
+}

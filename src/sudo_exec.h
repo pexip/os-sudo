@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,14 +14,25 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDO_EXEC_H
-#define _SUDO_EXEC_H
+#ifndef SUDO_EXEC_H
+#define SUDO_EXEC_H
 
 /*
  * Older systems may not support MSG_WAITALL but it shouldn't really be needed.
  */
 #ifndef MSG_WAITALL
 # define MSG_WAITALL 0
+#endif
+
+/*
+ * Some older systems support siginfo but predate SI_USER.
+ */
+#ifdef SA_SIGINFO
+# ifdef SI_USER
+#  define USER_SIGNALED(_info) ((_info) != NULL && (_info)->si_code == SI_USER)
+# else
+#  define USER_SIGNALED(_info) ((_info) != NULL && (_info)->si_code <= 0)
+# endif
 #endif
 
 /*
@@ -48,15 +59,28 @@
 #define SAVED_SIGUSR2	12
 
 /*
+ * Error codes for sesh
+ */
+#define SESH_SUCCESS	    0		/* successful operation */
+#define SESH_ERR_FAILURE    1		/* unspecified error */
+#define SESH_ERR_INVALID    30		/* invalid -e arg value */
+#define SESH_ERR_BAD_PATHS  31		/* odd number of paths */
+#define SESH_ERR_NO_FILES   32		/* copy error, no files copied */
+#define SESH_ERR_SOME_FILES 33		/* copy error, some files copied */
+
+/*
  * Symbols shared between exec.c and exec_pty.c
  */
 
 /* exec.c */
-struct sudo_event_base;
-int sudo_execve(const char *path, char *const argv[], char *const envp[], bool noexec);
 extern volatile pid_t cmnd_pid;
 
+/* exec_common.c */
+int sudo_execve(int fd, const char *path, char *const argv[], char *envp[], bool noexec);
+char **disable_execute(char *envp[], const char *dso);
+
 /* exec_pty.c */
+struct sudo_event_base;
 struct command_details;
 struct command_status;
 int fork_pty(struct command_details *details, int sv[], sigset_t *omask);
@@ -78,4 +102,4 @@ bool utmp_login(const char *from_line, const char *to_line, int ttyfd,
     const char *user);
 bool utmp_logout(const char *line, int status);
 
-#endif /* _SUDO_EXEC_H */
+#endif /* SUDO_EXEC_H */

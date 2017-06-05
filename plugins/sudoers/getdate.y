@@ -17,29 +17,25 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
+#if defined(HAVE_STDINT_H)
+# include <stdint.h>
+#elif defined(HAVE_INTTYPES_H)
+# include <inttypes.h>
+#endif
 #ifdef TIME_WITH_SYS_TIME
 # include <time.h>
 #endif
+#include <limits.h>
 #include <ctype.h>
 
-#include "missing.h"
+#include "sudo_compat.h"
 
 
 #define EPOCH		1970

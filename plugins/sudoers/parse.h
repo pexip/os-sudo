@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2000, 2004, 2007-2014
+ * Copyright (c) 1996, 1998-2000, 2004, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -15,8 +15,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDOERS_PARSE_H
-#define _SUDOERS_PARSE_H
+#ifndef SUDOERS_PARSE_H
+#define SUDOERS_PARSE_H
 
 #undef UNSPEC
 #define UNSPEC	-1
@@ -26,6 +26,53 @@
 #define ALLOW	 1
 #undef IMPLIED
 #define IMPLIED	 2
+
+/*
+ * Initialize all tags to UNSPEC.
+ */
+#define TAGS_INIT(t)	do {						       \
+    (t).follow = UNSPEC;						       \
+    (t).log_input = UNSPEC;						       \
+    (t).log_output = UNSPEC;						       \
+    (t).noexec = UNSPEC;						       \
+    (t).nopasswd = UNSPEC;						       \
+    (t).send_mail = UNSPEC;						       \
+    (t).setenv = UNSPEC;						       \
+} while (0)
+
+/*
+ * Returns true if any tag are not UNSPEC, else false.
+ */
+#define TAGS_SET(t)							       \
+    ((t).follow != UNSPEC || (t).log_input != UNSPEC ||			       \
+     (t).log_output != UNSPEC || (t).noexec != UNSPEC ||		       \
+     (t).nopasswd != UNSPEC || (t).send_mail != UNSPEC ||		       \
+     (t).setenv != UNSPEC)
+
+/*
+ * Returns true if the specified tag is not UNSPEC or IMPLIED, else false.
+ */
+#define TAG_SET(tt) \
+    ((tt) != UNSPEC && (tt) != IMPLIED)
+
+/*
+ * Returns true if any tags set in nt differ between ot and nt, else false.
+ */
+#define TAGS_CHANGED(ot, nt) \
+    ((TAG_SET((nt).follow) && (nt).follow != (ot).follow) || \
+    (TAG_SET((nt).log_input) && (nt).log_input != (ot).log_input) || \
+    (TAG_SET((nt).log_output) && (nt).log_output != (ot).log_output) || \
+    (TAG_SET((nt).noexec) && (nt).noexec != (ot).noexec) || \
+    (TAG_SET((nt).nopasswd) && (nt).nopasswd != (ot).nopasswd) || \
+    (TAG_SET((nt).setenv) && (nt).setenv != (ot).setenv) || \
+    (TAG_SET((nt).send_mail) && (nt).send_mail != (ot).send_mail))
+
+/*
+ * Returns true if the runas user and group lists match, else false.
+ */
+#define RUNAS_CHANGED(cs1, cs2) \
+     ((cs1)->runasuserlist != (cs2)->runasuserlist || \
+     (cs1)->runasgrouplist != (cs2)->runasgrouplist)
 
 #define SUDO_DIGEST_SHA224	0
 #define SUDO_DIGEST_SHA256	1
@@ -58,6 +105,8 @@ struct cmndtag {
     signed int setenv: 3;
     signed int log_input: 3;
     signed int log_output: 3;
+    signed int send_mail: 3;
+    signed int follow: 3;
 };
 
 /*
@@ -110,6 +159,8 @@ struct userspec {
     TAILQ_ENTRY(userspec) entries;
     struct member_list users;		/* list of users */
     struct privilege_list privileges;	/* list of privileges */
+    int lineno;
+    char *file;
 };
 
 /*
@@ -160,20 +211,25 @@ struct runascontainer {
 struct alias {
     char *name;				/* alias name */
     unsigned short type;		/* {USER,HOST,RUNAS,CMND}ALIAS */
-    bool used;				/* "used" flag for cycle detection */
+    short used;				/* "used" flag for cycle detection */
+    int lineno;				/* line number of alias entry */
+    char *file;				/* file the alias entry was in */
     struct member_list members;		/* list of alias members */
 };
 
 /*
- * Structure describing a Defaults entry and a list thereof.
+ * Structure describing a Defaults entry in sudoers.
  */
 struct defaults {
     TAILQ_ENTRY(defaults) entries;
     char *var;				/* variable name */
     char *val;				/* variable value */
     struct member_list *binding;	/* user/host/runas binding */
-    int type;				/* DEFAULTS{,_USER,_RUNAS,_HOST} */
-    int op;				/* true, false, '+', '-' */
+    char *file;				/* file Defaults entry was in */
+    short type;				/* DEFAULTS{,_USER,_RUNAS,_HOST} */
+    char op;				/* true, false, '+', '-' */
+    char error;				/* parse error flag */
+    int lineno;				/* line number of Defaults entry */
 };
 
 /*
@@ -184,17 +240,18 @@ extern struct defaults_list defaults;
 
 /* alias.c */
 bool no_aliases(void);
-char *alias_add(char *name, int type, struct member *members);
+const char *alias_add(char *name, int type, char *file, int lineno, struct member *members);
 int alias_compare(const void *a1, const void *a2);
 struct alias *alias_get(char *name, int type);
 struct alias *alias_remove(char *name, int type);
 void alias_apply(int (*func)(void *, void *), void *cookie);
 void alias_free(void *a);
 void alias_put(struct alias *a);
-void init_aliases(void);
+bool init_aliases(void);
 
 /* gram.c */
-void init_parser(const char *, bool);
+bool init_parser(const char *path, bool quiet);
+void free_members(struct member_list *members);
 
 /* match_addr.c */
 bool addr_matches(char *n);
@@ -208,9 +265,10 @@ bool usergr_matches(const char *group, const char *user, const struct passwd *pw
 bool userpw_matches(const char *sudoers_user, const char *user, const struct passwd *pw);
 int cmnd_matches(const struct member *m);
 int cmndlist_matches(const struct member_list *list);
-int hostlist_matches(const struct member_list *list);
+int hostlist_matches(const struct passwd *pw, const struct member_list *list);
 int runaslist_matches(const struct member_list *user_list, const struct member_list *group_list, struct member **matching_user, struct member **matching_group);
 int userlist_matches(const struct passwd *pw, const struct member_list *list);
+const char *sudo_getdomainname(void);
 
 /* toke.c */
 void init_lexer(void);
@@ -221,4 +279,4 @@ int hexchar(const char *s);
 /* base64.c */
 size_t base64_decode(const char *str, unsigned char *dst, size_t dsize);
 
-#endif /* _SUDOERS_PARSE_H */
+#endif /* SUDOERS_PARSE_H */
