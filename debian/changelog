@@ -1,3 +1,9 @@
+sudo (1.8.10p3-1+deb8u4pexip2) pexip; urgency=low
+
+  * Ensure language and encoding variables are reset
+
+ -- Vincent Sanders <vince@pexip.com>  Thu, 16 Nov 2017 15:59:18 +0000
+
 sudo (1.8.10p3-1+deb8u4pexip1) pexip; urgency=low
 
   * New upstream release

@@ -10,6 +10,10 @@ Defaults	env_reset
 Defaults	mail_badpass
 Defaults	secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+# Ensure the environment gets the default language and encoding values
+Defaults        env_check -= "LANG LC_*"
+Defaults        env_delete += "LANG LC_*"
+
 # Host alias specification
 
 # User alias specification
