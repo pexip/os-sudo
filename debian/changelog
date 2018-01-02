@@ -1,3 +1,17 @@
+sudo (1.8.10p3-1+deb8u5pexip1) pexip; urgency=low
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 02 Jan 2018 12:45:07 +0000
+
+sudo (1.8.10p3-1+deb8u5) jessie; urgency=medium
+
+  * Non-maintainer upload.
+  * Use /proc/self consistently on Linux
+  * CVE-2017-1000368: Arbitrary terminal access (Closes: #863897)
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Tue, 08 Aug 2017 21:44:31 +0200
+
 sudo (1.8.10p3-1+deb8u4pexip2) pexip; urgency=low
 
   * Ensure language and encoding variables are reset
