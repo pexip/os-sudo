@@ -12,7 +12,7 @@ limited root privileges to users and log root activity.  \
 The basic philosophy is to give as few privileges as possible but \
 still allow people to get their work done."
 	vendor="Todd C. Miller"
-	copyright="(c) 1993-1996,1998-2014 Todd C. Miller"
+	copyright="(c) 1993-1996,1998-2016 Todd C. Miller"
 	sudoedit_man=`echo ${pp_destdir}$mandir/*/sudoedit.*|sed "s:^${pp_destdir}::"`
 	sudoedit_man_target=`basename $sudoedit_man | sed 's/edit//'`
 
@@ -39,12 +39,47 @@ still allow people to get their work done."
 	pp_solaris_pstamp=`/usr/bin/date "+%B %d, %Y"`
 %endif
 
+%if [macos]
+	# System Integrity Protection on Mac OS X won't allow us to write
+	# directly to /etc or /var.  We must install in /private instead.
+	case "$sudoersdir" in
+	/etc|/etc/*)
+	    mkdir -p ${pp_destdir}/private
+	    chmod 755 ${pp_destdir}/private
+	    if test -d ${pp_destdir}/etc; then
+		mv ${pp_destdir}/etc ${pp_destdir}/private/etc
+	    fi
+	    sudoersdir="/private${sudoersdir}"
+	    ;;
+	esac
+	case "$vardir" in
+	/var|/var/*)
+	    mkdir -p ${pp_destdir}/private
+	    chmod 755 ${pp_destdir}/private
+	    if test -d ${pp_destdir}/var; then
+		mv ${pp_destdir}/var ${pp_destdir}/private/var
+	    fi
+	    vardir="/private${vardir}"
+	    ;;
+	esac
+	case "$rundir" in
+	/var|/var/*)
+	    mkdir -p ${pp_destdir}/private
+	    chmod 755 ${pp_destdir}/private
+	    if test -d ${pp_destdir}/var; then
+		mv ${pp_destdir}/var ${pp_destdir}/private/var
+	    fi
+	    rundir="/private${rundir}"
+	    ;;
+	esac
+%endif
+
 %if [rpm,deb]
 	# Convert patch level into release and remove from version
-	pp_rpm_release="`expr \( $version : '.*p\([0-9][0-9]*\)' \| 0 \) + 1`"
-	pp_rpm_version="`expr $version : '\(.*\)p[0-9][0-9]*'`"
+	pp_rpm_release="`expr \( $version : '.*p\([0-9][0-9]*\)$' \| 0 \) + 1`"
+	pp_rpm_version="`expr \( $version : '\(.*\)p[0-9][0-9]*$' \| $version \)`"
 	pp_rpm_license="BSD"
-	pp_rpm_url="http://www.sudo.ws/"
+	pp_rpm_url="https://www.sudo.ws"
 	pp_rpm_group="Applications/System"
 	pp_rpm_packager="Todd C. Miller <Todd.Miller@courtesan.com>"
 	if test -n "$linux_audit"; then
@@ -84,9 +119,9 @@ still allow people to get their work done."
 
 %if [rpm]
 	# Add distro info to release
-	osrelease=`echo "$pp_rpm_distro" | sed -e 's/^[^0-9]*//' -e 's/-.*$//'`
+	osrelease=`echo "$pp_rpm_distro" | sed -e 's/^[^0-9]*\([0-9]\{1,2\}\).*/\1/'`
 	case "$pp_rpm_distro" in
-	centos*|rhel*)
+	centos*|rhel*|f[0-9]*)
 		pp_rpm_release="$pp_rpm_release.el${osrelease%%[0-9]}"
 		;;
 	sles*)
@@ -97,11 +132,12 @@ still allow people to get their work done."
 	# Uncomment some Defaults in sudoers
 	# Note that the order must match that of sudoers.
 	case "$pp_rpm_distro" in
-	centos*|rhel*)
+	centos*|rhel*|f[0-9]*)
 		chmod u+w ${pp_destdir}${sudoersdir}/sudoers
 		/bin/ed - ${pp_destdir}${sudoersdir}/sudoers <<-'EOF'
 		/Locale settings/+1,s/^# //
 		/Desktop path settings/+1,s/^# //
+		/allow members of group wheel to execute any command/+1,s/^# //
 		w
 		q
 		EOF
@@ -123,9 +159,13 @@ still allow people to get their work done."
 
 	# For RedHat the doc dir is expected to include version and release
 	case "$pp_rpm_distro" in
-	centos*|rhel*)
-		mv ${pp_destdir}/${docdir} ${pp_destdir}/${docdir}-${version}-${pp_rpm_release}
-		docdir=${docdir}-${version}-${pp_rpm_release}
+	centos*|rhel*|f[0-9]*)
+		rhel_docdir="${docdir}-${pp_rpm_version}-${pp_rpm_release}"
+		if test "`dirname ${exampledir}`" = "${docdir}"; then
+		    exampledir="${rhel_docdir}/`basename ${exampledir}`"
+		fi
+		mv "${pp_destdir}/${docdir}" "${pp_destdir}/${rhel_docdir}"
+		docdir="${rhel_docdir}"
 		;;
 	esac
 
@@ -160,7 +200,27 @@ still allow people to get their work done."
 			EOF
 		fi
 		;;
-	  sles*)
+	f[0-9]*)
+		# XXX - share with rhel
+		mkdir -p ${pp_destdir}/etc/pam.d
+		cat > ${pp_destdir}/etc/pam.d/sudo <<-EOF
+		#%PAM-1.0
+		auth       include	system-auth
+		account    include	system-auth
+		password   include	system-auth
+		session    optional	pam_keyinit.so revoke
+		session    required	pam_limits.so
+		EOF
+		cat > ${pp_destdir}/etc/pam.d/sudo-i <<-EOF
+		#%PAM-1.0
+		auth       include	sudo
+		account    include	sudo
+		password   include	sudo
+		session    optional	pam_keyinit.so force revoke
+		session    required	pam_limits.so
+		EOF
+		;;
+	sles*)
 		mkdir -p ${pp_destdir}/etc/pam.d
 		if test $osrelease -lt 10; then
 			cat > ${pp_destdir}/etc/pam.d/sudo <<-EOF
@@ -190,6 +250,8 @@ still allow people to get their work done."
 	/Locale settings/+1,s/^# //
 	/X11 resource/+1,s/^# //
 	/^# \%sudo/,s/^# //
+	/^# Defaults secure_path/,s/^# //
+	/^# Defaults mail_badpass/,s/^# //
 	w
 	q
 	EOF
@@ -223,24 +285,27 @@ still allow people to get their work done."
 	ln -s -f ${sbindir}/visudo ${pp_destdir}/usr/sbin
 %endif
 
-	# OS-level directories that should generally exist but might not.
-	extradirs=`echo ${pp_destdir}/${mandir}/[mc]* | sed "s#${pp_destdir}/##g"`
-	extradirs="$extradirs `dirname $docdir` `dirname $rundir` `dirname $vardir`"
-	test -d ${pp_destdir}${localedir} && extradirs="$extradirs $localedir"
-	test -d ${pp_destdir}/etc/pam.d && extradirs="${extradirs} /etc/pam.d"
-	for dir in $bindir $sbindir $libexecdir $includedir $extradirs; do
-		while test "$dir" != "/"; do
-			osdirs="${osdirs}${osdirs+ }$dir/"
-			dir=`dirname $dir`
-		done
-	done
-	osdirs=`echo $osdirs | tr " " "\n" | sort -u`
+	# Package parent directories when not installing under /usr
+	if test "${prefix}" != "/usr"; then
+	    extradirs=`echo ${pp_destdir}/${mandir}/[mc]* | sed "s#${pp_destdir}/##g"`
+	    extradirs="$extradirs `dirname $docdir` `dirname $rundir` `dirname $vardir`"
+	    test "`dirname $exampledir`" != "$docdir" && extradirs="$extradirs `dirname $exampledir`"
+	    test -d ${pp_destdir}${localedir} && extradirs="$extradirs $localedir"
+	    for dir in $bindir $sbindir $libexecdir $includedir $extradirs; do
+		    while test "$dir" != "/"; do
+			    parentdirs="${parentdirs}${parentdirs+ }$dir/"
+			    dir=`dirname $dir`
+		    done
+	    done
+	    parentdirs=`echo $parentdirs | tr " " "\n" | sort -u`
+	fi
 
 %depend [deb]
 	libc6, libpam0g, libpam-modules, zlib1g, libselinux1
 
 %fixup [deb]
 	# Add Conflicts, Replaces headers and add libldap depedency as needed.
+	DEPENDS="%{linux_audit}"
 	if test -z "%{flavor}"; then
 	    echo "Conflicts: sudo-ldap" >> %{pp_wrkdir}/%{name}/DEBIAN/control
 	    echo "Replaces: sudo-ldap" >> %{pp_wrkdir}/%{name}/DEBIAN/control
@@ -248,15 +313,18 @@ still allow people to get their work done."
 	    echo "Conflicts: sudo" >> %{pp_wrkdir}/%{name}/DEBIAN/control
 	    echo "Replaces: sudo" >> %{pp_wrkdir}/%{name}/DEBIAN/control
 	    echo "Provides: sudo" >> %{pp_wrkdir}/%{name}/DEBIAN/control
-	    cp -p %{pp_wrkdir}/%{name}/DEBIAN/control %{pp_wrkdir}/%{name}/DEBIAN/control.$$
-	    sed 's/^\(Depends:.*\) *$/\1, libldap-2.4-2/' %{pp_wrkdir}/%{name}/DEBIAN/control.$$ > %{pp_wrkdir}/%{name}/DEBIAN/control
-	    rm -f %{pp_wrkdir}/%{name}/DEBIAN/control.$$
+	    DEPENDS="${DEPENDS}, libldap-2.4-2"
 	fi
-	echo "Homepage: http://www.sudo.ws/sudo/" >> %{pp_wrkdir}/%{name}/DEBIAN/control
-	echo "Bugs: http://www.sudo.ws/bugs/" >> %{pp_wrkdir}/%{name}/DEBIAN/control
+	cp -p %{pp_wrkdir}/%{name}/DEBIAN/control %{pp_wrkdir}/%{name}/DEBIAN/control.$$
+	sed "s/^\(Depends:.*\) *$/\1, ${DEPENDS}/" %{pp_wrkdir}/%{name}/DEBIAN/control.$$ > %{pp_wrkdir}/%{name}/DEBIAN/control
+	rm -f %{pp_wrkdir}/%{name}/DEBIAN/control.$$
+	echo "Homepage: https://www.sudo.ws" >> %{pp_wrkdir}/%{name}/DEBIAN/control
+	echo "Bugs: https://bugzilla.sudo.ws" >> %{pp_wrkdir}/%{name}/DEBIAN/control
 
 %files
-	$osdirs			-
+%if X"$parentdirs" != X""
+	$parentdirs		-
+%endif
 	$bindir/sudo        	4755 root:
 	$bindir/sudoedit    	0755 root: symlink sudo
 	$sbindir/visudo     	0755
@@ -268,13 +336,16 @@ still allow people to get their work done."
 	$sudoersdir/sudoers.d/	0750 $sudoers_uid:$sudoers_gid
 	$rundir/		0711 root:
 	$vardir/		0711 root: ignore-others
+	$vardir/lectured/	0700 root:
 	$docdir/		0755
 	$docdir/sudoers2ldif	0755 optional,ignore-others
 %if [deb]
 	$docdir/LICENSE		ignore,ignore-others
 	$docdir/ChangeLog	ignore,ignore-others
 %endif
-	$docdir/*		0644
+	$exampledir/		0755 ignore-others
+	$exampledir/*		0644 ignore-others
+	$docdir/**		0644
 	$localedir/*/		-    optional
 	$localedir/*/LC_MESSAGES/ -    optional
 	$localedir/*/LC_MESSAGES/* 0644    optional
@@ -310,14 +381,14 @@ still allow people to get their work done."
 %endif
 
 %files [!aix]
-	$sudoedit_man		0644 symlink,ignore-others $sudoedit_man_target
 	$mandir/man*/*		0644
+	$sudoedit_man		0644 symlink,ignore-others $sudoedit_man_target
 
 %files [aix]
 	# Some versions use catpages, some use manpages.
-	$sudoedit_man		0644 symlink,ignore-others $sudoedit_man_target
 	$mandir/cat*/*		0644 optional
 	$mandir/man*/*		0644 optional
+	$sudoedit_man		0644 symlink,ignore-others $sudoedit_man_target
 
 %pre [aix]
 	if rpm -q %{name} >/dev/null 2>&1; then
@@ -393,6 +464,19 @@ still allow people to get their work done."
 		;;
 	esac
 
+%post [rpm,deb]
+	# Create /usr/lib/tmpfiles.d/sudo.conf if systemd is configured.
+	if [ -f /usr/lib/tmpfiles.d/systemd.conf ]; then
+		cat > /usr/lib/tmpfiles.d/sudo.conf <<-EOF
+		# Create an empty sudo time stamp directory on OSes using systemd.
+		# Sudo will create the directory itself but this can cause problems
+		# on systems that have SELinux enabled since the directories will be
+		# created with the user's security context.
+		d %{rundir} 0711 root root
+		D %{rundir}/ts 0700 root root
+		EOF
+	fi
+
 %post [aix]
 	# Create /etc/rc.d/rc2.d/S90sudo link if /etc/rc.d exists
 	if [ -d /etc/rc.d ]; then
@@ -418,12 +502,19 @@ still allow people to get their work done."
 	    X"`readlink /etc/sudo-ldap.conf 2>/dev/null`" = X"/etc/ldap/ldap.conf"; then
 		rm -f /etc/sudo-ldap.conf
 	fi
+
+	# Remove systemd tmpfile config
+	rm -f /usr/lib/tmpfiles.d/sudo.conf
 %endif
 %if [rpm]
 	case "%{pp_rpm_distro}" in
 	aix*)
 		# Remove /etc/rc.d/rc2.d/S90sudo link
 		rm -f /etc/rc.d/rc2.d/S90sudo
+		;;
+	*)
+		# Remove systemd tmpfile config
+		rm -f /usr/lib/tmpfiles.d/sudo.conf
 		;;
 	esac
 %endif

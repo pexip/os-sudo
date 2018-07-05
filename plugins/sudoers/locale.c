@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2012-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,14 +18,7 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
@@ -39,11 +32,12 @@
 #endif /* HAVE_STDBOOL_H */
 
 #define DEFAULT_TEXT_DOMAIN	"sudoers"
-#include "gettext.h"		/* must be included before missing.h */
+#include "sudo_gettext.h"	/* must be included before sudo_compat.h */
 
-#include "missing.h"
-#include "fatal.h"
-#include "alloc.h"
+#include "sudo_compat.h"
+#include "sudo_fatal.h"
+#include "sudoers_debug.h"
+#include "defaults.h"
 #include "logging.h"
 
 static int current_locale = SUDOERS_LOCALE_USER;
@@ -53,20 +47,28 @@ static char *sudoers_locale;
 int
 sudoers_getlocale(void)
 {
-    return current_locale;
+    debug_decl(sudoers_getlocale, SUDOERS_DEBUG_UTIL)
+    debug_return_int(current_locale);
 }
 
-void
+bool
 sudoers_initlocale(const char *ulocale, const char *slocale)
 {
+    debug_decl(sudoers_initlocale, SUDOERS_DEBUG_UTIL)
+
     if (ulocale != NULL) {
-	efree(user_locale);
-	user_locale = estrdup(ulocale);
+	free(user_locale);
+	if ((user_locale = strdup(ulocale)) == NULL)
+	    debug_return_bool(false);
     }
     if (slocale != NULL) {
-	efree(sudoers_locale);
-	sudoers_locale = estrdup(slocale);
+	free(sudoers_locale);
+	if ((sudoers_locale = strdup(slocale)) == NULL)
+	    debug_return_bool(false);
     }
+    sudo_debug_printf(SUDO_DEBUG_INFO, "%s: user locale %s, sudoers locale %s",
+	__func__, user_locale, sudoers_locale);
+    debug_return_bool(true);
 }
 
 /*
@@ -79,6 +81,7 @@ bool
 sudoers_setlocale(int newlocale, int *prevlocale)
 {
     char *res = NULL;
+    debug_decl(sudoers_setlocale, SUDOERS_DEBUG_UTIL)
 
     switch (newlocale) {
 	case SUDOERS_LOCALE_USER:
@@ -86,9 +89,17 @@ sudoers_setlocale(int newlocale, int *prevlocale)
 		*prevlocale = current_locale;
 	    if (current_locale != SUDOERS_LOCALE_USER) {
 		current_locale = SUDOERS_LOCALE_USER;
+		sudo_debug_printf(SUDO_DEBUG_DEBUG,
+		    "%s: setting locale to %s (user)", __func__,
+		    user_locale ? user_locale : "");
 		res = setlocale(LC_ALL, user_locale ? user_locale : "");
-		if (res != NULL && user_locale == NULL)
-		    user_locale = estrdup(setlocale(LC_ALL, NULL));
+		if (res != NULL && user_locale == NULL) {
+		    user_locale = setlocale(LC_ALL, NULL);
+		    if (user_locale != NULL)
+			user_locale = strdup(user_locale);
+		    if (user_locale == NULL)
+			res = NULL;
+		}
 	    }
 	    break;
 	case SUDOERS_LOCALE_SUDOERS:
@@ -96,31 +107,45 @@ sudoers_setlocale(int newlocale, int *prevlocale)
 		*prevlocale = current_locale;
 	    if (current_locale != SUDOERS_LOCALE_SUDOERS) {
 		current_locale = SUDOERS_LOCALE_SUDOERS;
+		sudo_debug_printf(SUDO_DEBUG_DEBUG,
+		    "%s: setting locale to %s (sudoers)", __func__,
+		    sudoers_locale ? sudoers_locale : "C");
 		res = setlocale(LC_ALL, sudoers_locale ? sudoers_locale : "C");
 		if (res == NULL && sudoers_locale != NULL) {
 		    if (strcmp(sudoers_locale, "C") != 0) {
-			efree(sudoers_locale);
-			sudoers_locale = estrdup("C");
-			res = setlocale(LC_ALL, "C");
+			free(sudoers_locale);
+			sudoers_locale = strdup("C");
+			if (sudoers_locale != NULL)
+			    res = setlocale(LC_ALL, "C");
 		    }
 		}
 	    }
 	    break;
     }
-    return res ? true : false;
+    debug_return_bool(res ? true : false);
 }
 
-#ifdef HAVE_LIBINTL_H
-char *
-warning_gettext(const char *msgid)
+bool
+sudoers_warn_setlocale(bool restore, int *cookie)
 {
-    int warning_locale;
-    char *msg;
+    debug_decl(sudoers_warn_setlocale, SUDOERS_DEBUG_UTIL)
 
-    sudoers_setlocale(SUDOERS_LOCALE_USER, &warning_locale);
-    msg = gettext(msgid);
-    sudoers_setlocale(warning_locale, NULL);
-
-    return msg;
+    if (restore)
+	debug_return_bool(sudoers_setlocale(*cookie, NULL));
+    debug_return_bool(sudoers_setlocale(SUDOERS_LOCALE_USER, cookie));
 }
-#endif /* HAVE_LIBINTL_H */
+
+/*
+ * Callback for sudoers_locale sudoers setting.
+ */
+bool
+sudoers_locale_callback(const union sudo_defs_val *sd_un)
+{
+    debug_decl(sudoers_locale_callback, SUDOERS_DEBUG_UTIL)
+
+    if (sudoers_initlocale(NULL, sd_un->str)) {
+	if (setlocale(LC_ALL, sd_un->str) != NULL)
+	    debug_return_bool(true);
+    }
+    debug_return_bool(false);
+}

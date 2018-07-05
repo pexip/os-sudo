@@ -18,18 +18,8 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -39,8 +29,8 @@
 
 #define SUDO_ERROR_WRAP 0
 
-#include "missing.h"
-#include "fatal.h"
+#include "sudo_compat.h"
+#include "sudo_fatal.h"
 #include "sudo_plugin.h"
 #include "sudo_util.h"
 
@@ -60,7 +50,7 @@ main(int argc, char *argv[])
 {
     size_t len;
     FILE *fp;
-    char *cp, *dash, *line, lines[2][2048];
+    char *line, lines[2][2048];
     int lineno = 0;
     int which = 0;
 
@@ -71,7 +61,7 @@ main(int argc, char *argv[])
 
     fp = fopen(argv[1], "r");
     if (fp == NULL)
-	fatalx("unable to open %s", argv[1]);
+	sudo_fatalx("unable to open %s", argv[1]);
 
     /*
      * Each test record consists of a log entry on one line and a list of
@@ -81,14 +71,18 @@ main(int argc, char *argv[])
      * 60-80,40
      */
     while ((line = fgets(lines[which], sizeof(lines[which]), fp)) != NULL) {
+	char *cp, *last;
+
 	len = strcspn(line, "\n");
 	line[len] = '\0';
 
 	/* If we read the 2nd line, parse list of line lengths and check. */
 	if (which) {
 	    lineno++;
-	    for (cp = strtok(lines[1], ","); cp != NULL; cp = strtok(NULL, ",")) {
+	    for (cp = strtok_r(lines[1], ",", &last); cp != NULL; cp = strtok_r(NULL, ",", &last)) {
+		char *dash;
 		size_t maxlen;
+
 		/* May be either a number or a range. */
 		dash = strchr(cp, '-');
 		if (dash != NULL) {
@@ -99,7 +93,7 @@ main(int argc, char *argv[])
 		    len = maxlen = strtonum(cp, 1, INT_MAX, NULL);
 		}
 		if (len == 0 || maxlen == 0)
-		    fatalx("%s: invalid length on line %d\n", argv[1], lineno);
+		    sudo_fatalx("%s: invalid length on line %d\n", argv[1], lineno);
 		while (len <= maxlen) {
 		    printf("# word wrap at %d characters\n", (int)len);
 		    writeln_wrap(stdout, lines[0], strlen(lines[0]), len);

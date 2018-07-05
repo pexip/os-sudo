@@ -20,31 +20,19 @@
 #include <sys/stat.h>
 
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
 # include "compat/stdbool.h"
 #endif /* HAVE_STDBOOL_H */
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -52,7 +40,7 @@
 #include <grp.h>
 #include <pwd.h>
 
-#include "missing.h"
+#include "sudo_compat.h"
 #include "sudo_dso.h"
 #include "sudo_plugin.h"
 #include "sudo_util.h"
@@ -81,10 +69,10 @@ sysgroup_init(int version, sudo_printf_t sudo_printf, char *const argv[])
 
     sudo_log = sudo_printf;
 
-    if (GROUP_API_VERSION_GET_MAJOR(version) != GROUP_API_VERSION_MAJOR) {
+    if (SUDO_API_VERSION_GET_MAJOR(version) != GROUP_API_VERSION_MAJOR) {
 	sudo_log(SUDO_CONV_ERROR_MSG,
 	    "sysgroup_group: incompatible major version %d, expected %d\n",
-	    GROUP_API_VERSION_GET_MAJOR(version),
+	    SUDO_API_VERSION_GET_MAJOR(version),
 	    GROUP_API_VERSION_MAJOR);
 	return -1;
     }
@@ -135,7 +123,7 @@ sysgroup_query(const char *user, const char *group, const struct passwd *pwd)
     grp = sysgroup_getgrnam(group);
     if (grp == NULL && group[0] == '#' && group[1] != '\0') {
 	const char *errstr;
-	gid_t gid = atoid(group + 1, NULL, NULL, &errstr);
+	gid_t gid = sudo_strtoid(group + 1, NULL, NULL, &errstr);
 	if (errstr == NULL)
 	    grp = sysgroup_getgrgid(gid);
     }

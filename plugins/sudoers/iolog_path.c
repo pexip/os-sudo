@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,18 +18,8 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -50,15 +40,17 @@ static size_t
 fill_seq(char *str, size_t strsize, char *logdir)
 {
 #ifdef SUDOERS_NO_SEQ
-    debug_decl(fill_seq, SUDO_DEBUG_UTIL)
+    debug_decl(fill_seq, SUDOERS_DEBUG_UTIL)
     debug_return_size_t(strlcpy(str, "%{seq}", strsize));
 #else
     static char sessid[7];
     int len;
-    debug_decl(fill_seq, SUDO_DEBUG_UTIL)
+    debug_decl(fill_seq, SUDOERS_DEBUG_UTIL)
 
-    if (sessid[0] == '\0')
-	io_nextid(logdir, def_iolog_dir, sessid);
+    if (sessid[0] == '\0') {
+	if (!io_nextid(logdir, def_iolog_dir, sessid))
+	    debug_return_size_t((size_t)-1);
+    }
 
     /* Path is of the form /var/log/sudo-io/00/00/01. */
     len = snprintf(str, strsize, "%c%c/%c%c/%c%c", sessid[0],
@@ -72,7 +64,7 @@ fill_seq(char *str, size_t strsize, char *logdir)
 static size_t
 fill_user(char *str, size_t strsize, char *unused)
 {
-    debug_decl(fill_user, SUDO_DEBUG_UTIL)
+    debug_decl(fill_user, SUDOERS_DEBUG_UTIL)
     debug_return_size_t(strlcpy(str, user_name, strsize));
 }
 
@@ -81,7 +73,7 @@ fill_group(char *str, size_t strsize, char *unused)
 {
     struct group *grp;
     size_t len;
-    debug_decl(fill_group, SUDO_DEBUG_UTIL)
+    debug_decl(fill_group, SUDOERS_DEBUG_UTIL)
 
     if ((grp = sudo_getgrgid(user_gid)) != NULL) {
 	len = strlcpy(str, grp->gr_name, strsize);
@@ -97,7 +89,7 @@ fill_group(char *str, size_t strsize, char *unused)
 static size_t
 fill_runas_user(char *str, size_t strsize, char *unused)
 {
-    debug_decl(fill_runas_user, SUDO_DEBUG_UTIL)
+    debug_decl(fill_runas_user, SUDOERS_DEBUG_UTIL)
     debug_return_size_t(strlcpy(str, runas_pw->pw_name, strsize));
 }
 
@@ -106,7 +98,7 @@ fill_runas_group(char *str, size_t strsize, char *unused)
 {
     struct group *grp;
     size_t len;
-    debug_decl(fill_runas_group, SUDO_DEBUG_UTIL)
+    debug_decl(fill_runas_group, SUDOERS_DEBUG_UTIL)
 
     if (runas_gr != NULL) {
 	len = strlcpy(str, runas_gr->gr_name, strsize);
@@ -126,14 +118,14 @@ fill_runas_group(char *str, size_t strsize, char *unused)
 static size_t
 fill_hostname(char *str, size_t strsize, char *unused)
 {
-    debug_decl(fill_hostname, SUDO_DEBUG_UTIL)
+    debug_decl(fill_hostname, SUDOERS_DEBUG_UTIL)
     debug_return_size_t(strlcpy(str, user_shost, strsize));
 }
 
 static size_t
 fill_command(char *str, size_t strsize, char *unused)
 {
-    debug_decl(fill_command, SUDO_DEBUG_UTIL)
+    debug_decl(fill_command, SUDOERS_DEBUG_UTIL)
     debug_return_size_t(strlcpy(str, user_base, strsize));
 }
 
@@ -165,12 +157,16 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
     struct path_escape *escapes = NULL;
     int pass, oldlocale;
     bool strfit;
-    debug_decl(expand_iolog_path, SUDO_DEBUG_UTIL)
+    debug_decl(expand_iolog_path, SUDOERS_DEBUG_UTIL)
 
     /* Expanded path must be <= PATH_MAX */
     if (prefix != NULL)
 	prelen = strlen(prefix);
-    dst = path = emalloc(prelen + PATH_MAX);
+    dst = path = malloc(prelen + PATH_MAX);
+    if (path == NULL) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	goto bad;
+    }
     *path = '\0';
     pathend = path + prelen + PATH_MAX;
 
@@ -273,12 +269,13 @@ expand_iolog_path(const char *prefix, const char *dir, const char *file,
 	    *dst = '\0';
 	}
     }
-    if (slashp)
+    if (slash != NULL)
+	*slash = '/';
+    if (slashp != NULL)
 	*slashp = slash;
-    *slash = '/';
 
     debug_return_str(path);
 bad:
-    efree(path);
+    free(path);
     debug_return_str(NULL);
 }

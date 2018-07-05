@@ -16,7 +16,9 @@ SSYYNNOOPPSSIISS
 
 DDEESSCCRRIIPPTTIIOONN
      ssuuddoo allows a permitted user to execute a _c_o_m_m_a_n_d as the superuser or
-     another user, as specified by the security policy.
+     another user, as specified by the security policy.  The invoking user's
+     real (_n_o_t effective) user ID is used to determine the user name with
+     which to query the security policy.
 
      ssuuddoo supports a plugin architecture for security policies and
      input/output logging.  Third parties can develop and distribute their own
@@ -124,6 +126,24 @@ DDEESSCCRRIIPPTTIIOONN
                        copied back to their original location and the
                        temporary versions are removed.
 
+                 To help prevent the editing of unauthorized files, the
+                 following restrictions are enforced unless explicitly allowed
+                 by the security policy:
+
+                  ++oo   Symbolic links may not be edited (version 1.8.15 and
+                      higher).
+
+                  ++oo   Symbolic links along the path to be edited are not
+                      followed when the parent directory is writable by the
+                      invoking user unless that user is root (version 1.8.16
+                      and higher).
+
+                  ++oo   Files located in a directory that is writable by the
+                      invoking user may not be edited unless that user is root
+                      (version 1.8.16 and higher).
+
+                 Users are never allowed to edit device special files.
+
                  If the specified file does not exist, it will be created.
                  Note that unlike most commands run by _s_u_d_o, the editor is run
                  with the invoking user's environment unmodified.  If, for
@@ -167,7 +187,7 @@ DDEESSCCRRIIPPTTIIOONN
                  attempts to change to that user's home directory before
                  running the shell.  The command is run with an environment
                  similar to the one a user would receive at log in.  The
-                 _C_o_m_m_a_n_d _E_n_v_i_r_o_n_m_e_n_t section in the sudoers(4) manual
+                 _C_o_m_m_a_n_d _e_n_v_i_r_o_n_m_e_n_t section in the sudoers(4) manual
                  documents how the --ii option affects the environment in which
                  a command is run when the _s_u_d_o_e_r_s policy is in use.
 
@@ -275,7 +295,7 @@ DDEESSCCRRIIPPTTIIOONN
 
      --uu _u_s_e_r, ----uusseerr=_u_s_e_r
                  Run the command as a user other than the default target user
-                 (usually _r_o_o_t _)_. The _u_s_e_r may be either a user name or a
+                 (usually _r_o_o_t).  The _u_s_e_r may be either a user name or a
                  numeric user ID (UID) prefixed with the `#' character (e.g.
                  #0 for UID 0).  When running commands as a UID, many shells
                  require that the `#' be escaped with a backslash (`\').  Some
@@ -321,27 +341,27 @@ CCOOMMMMAANNDD EEXXEECCUUTTIIOONN
 
      The following parameters may be specified by security policy:
 
-     oo   real and effective user ID
+     ++oo   real and effective user ID
 
-     oo   real and effective group ID
+     ++oo   real and effective group ID
 
-     oo   supplementary group IDs
+     ++oo   supplementary group IDs
 
-     oo   the environment list
+     ++oo   the environment list
 
-     oo   current working directory
+     ++oo   current working directory
 
-     oo   file creation mode mask (umask)
+     ++oo   file creation mode mask (umask)
 
-     oo   SELinux role and type
+     ++oo   SELinux role and type
 
-     oo   Solaris project
+     ++oo   Solaris project
 
-     oo   Solaris privileges
+     ++oo   Solaris privileges
 
-     oo   BSD login class
+     ++oo   BSD login class
 
-     oo   scheduling priority (aka nice value)
+     ++oo   scheduling priority (aka nice value)
 
    PPrroocceessss mmooddeell
      When ssuuddoo runs a command, it calls fork(2), sets up the execution
@@ -365,12 +385,12 @@ CCOOMMMMAANNDD EEXXEECCUUTTIIOONN
 
    SSiiggnnaall hhaannddlliinngg
      When the command is run as a child of the ssuuddoo process, ssuuddoo will relay
-     signals it receives to the command.  Unless the command is being run in a
-     new pty, the SIGHUP, SIGINT and SIGQUIT signals are not relayed unless
-     they are sent by a user process, not the kernel.  Otherwise, the command
-     would receive SIGINT twice every time the user entered control-C.  Some
-     signals, such as SIGSTOP and SIGKILL, cannot be caught and thus will not
-     be relayed to the command.  As a general rule, SIGTSTP should be used
+     signals it receives to the command.  The SIGINT and SIGQUIT signals are
+     only relayed when the command is being run in a new pty or when the
+     signal was sent by a user process, not the kernel.  This prevents the
+     command from receiving SIGINT twice each time the user enters control-C.
+     Some signals, such as SIGSTOP and SIGKILL, cannot be caught and thus will
+     not be relayed to the command.  As a general rule, SIGTSTP should be used
      instead of SIGSTOP when you wish to suspend a command being run by ssuuddoo.
 
      As a special case, ssuuddoo will not relay signals that were sent by the
@@ -403,19 +423,21 @@ CCOOMMMMAANNDD EEXXEECCUUTTIIOONN
      architecture.
 
 EEXXIITT VVAALLUUEE
-     Upon successful execution of a program, the exit status from _s_u_d_o will
-     simply be the exit status of the program that was executed.
+     Upon successful execution of a command, the exit status from ssuuddoo will be
+     the exit status of the program that was executed.  If the command
+     terminated due to receipt of a signal, ssuuddoo will send itself the signal
+     that terminated the command.
 
      Otherwise, ssuuddoo exits with a value of 1 if there is a
      configuration/permission problem or if ssuuddoo cannot execute the given
-     command.  In the latter case the error string is printed to the standard
+     command.  In the latter case, the error string is printed to the standard
      error.  If ssuuddoo cannot stat(2) one or more entries in the user's PATH, an
-     error is printed on stderr.  (If the directory does not exist or if it is
-     not really a directory, the entry is ignored and no error is printed.)
-     This should not happen under normal circumstances.  The most common
-     reason for stat(2) to return ``permission denied'' is if you are running
-     an automounter and one of the directories in your PATH is on a machine
-     that is currently unreachable.
+     error is printed to the standard error.  (If the directory does not exist
+     or if it is not really a directory, the entry is ignored and no error is
+     printed.)  This should not happen under normal circumstances.  The most
+     common reason for stat(2) to return ``permission denied'' is if you are
+     running an automounter and one of the directories in your PATH is on a
+     machine that is currently unreachable.
 
 SSEECCUURRIITTYY NNOOTTEESS
      ssuuddoo tries to be safe when executing external commands.
@@ -426,6 +448,11 @@ SSEECCUURRIITTYY NNOOTTEESS
      environment variable is _n_o_t modified and is passed unchanged to the
      program that ssuuddoo executes.
 
+     Users should _n_e_v_e_r be granted ssuuddoo privileges to execute files that are
+     writable by the user or that reside in a directory that is writable by
+     the user.  If the user can modify or replace the command there is no way
+     to limit what additional commands they can run.
+
      Please note that ssuuddoo will normally only log the command it explicitly
      runs.  If a user runs a command such as sudo su or sudo sh, subsequent
      commands run from that shell are not subject to ssuuddoo's security policy.
@@ -435,14 +462,16 @@ SSEECCUURRIITTYY NNOOTTEESS
      those commands.  Because of this, care must be taken when giving users
      access to commands via ssuuddoo to verify that the command does not
      inadvertently give the user an effective root shell.  For more
-     information, please see the _P_R_E_V_E_N_T_I_N_G _S_H_E_L_L _E_S_C_A_P_E_S section in
+     information, please see the _P_r_e_v_e_n_t_i_n_g _s_h_e_l_l _e_s_c_a_p_e_s section in
      sudoers(4).
 
      To prevent the disclosure of potentially sensitive information, ssuuddoo
      disables core dumps by default while it is executing (they are re-enabled
-     for the command that is run).  To aid in debugging ssuuddoo crashes, you may
-     wish to re-enable core dumps by setting ``disable_coredump'' to false in
-     the sudo.conf(4) file as follows:
+     for the command that is run).  This historical practice dates from a time
+     when most operating systems allowed setuid processes to dump core by
+     default.  To aid in debugging ssuuddoo crashes, you may wish to re-enable
+     core dumps by setting ``disable_coredump'' to false in the sudo.conf(4)
+     file as follows:
 
            Set disable_coredump false
 
@@ -455,13 +484,22 @@ EENNVVIIRROONNMMEENNTT
      EDITOR           Default editor to use in --ee (sudoedit) mode if neither
                       SUDO_EDITOR nor VISUAL is set.
 
-     MAIL             In --ii mode or when _e_n_v___r_e_s_e_t is enabled in _s_u_d_o_e_r_s, set
-                      to the mail spool of the target user.
+     MAIL             Set to the mail spool of the target user when the --ii
+                      option is specified or when _e_n_v___r_e_s_e_t is enabled in
+                      _s_u_d_o_e_r_s (unless MAIL is present in the _e_n_v___k_e_e_p list).
 
-     HOME             Set to the home directory of the target user if --ii or --HH
-                      are specified, _e_n_v___r_e_s_e_t or _a_l_w_a_y_s___s_e_t___h_o_m_e are set in
-                      _s_u_d_o_e_r_s, or when the --ss option is specified and _s_e_t___h_o_m_e
-                      is set in _s_u_d_o_e_r_s.
+     HOME             Set to the home directory of the target user when the --ii
+                      or --HH options are specified, when the --ss option is
+                      specified and _s_e_t___h_o_m_e is set in _s_u_d_o_e_r_s, when
+                      _a_l_w_a_y_s___s_e_t___h_o_m_e is enabled in _s_u_d_o_e_r_s, or when _e_n_v___r_e_s_e_t
+                      is enabled in _s_u_d_o_e_r_s and _H_O_M_E is not present in the
+                      _e_n_v___k_e_e_p list.
+
+     LOGNAME          Set to the login name of the target user when the --ii
+                      option is specified, when the _s_e_t___l_o_g_n_a_m_e option is
+                      enabled in _s_u_d_o_e_r_s or when the _e_n_v___r_e_s_e_t option is
+                      enabled in _s_u_d_o_e_r_s (unless LOGNAME is present in the
+                      _e_n_v___k_e_e_p list).
 
      PATH             May be overridden by the security policy.
 
@@ -486,8 +524,9 @@ EENNVVIIRROONNMMEENNTT
 
      SUDO_USER        Set to the login name of the user who invoked sudo.
 
-     USER             Set to the target user (root unless the --uu option is
-                      specified).
+     USER             Set to the same value as LOGNAME, described above.
+
+     USERNAME         Same as USER.
 
      VISUAL           Default editor to use in --ee (sudoedit) mode if
                       SUDO_EDITOR is not set.
@@ -510,15 +549,15 @@ EEXXAAMMPPLLEESS
 
      To edit the _i_n_d_e_x_._h_t_m_l file as user www:
 
-           $ sudo -u www vi ~www/htdocs/index.html
+           $ sudoedit -u www ~www/htdocs/index.html
 
      To view system logs only accessible to root and users in the adm group:
 
-           $ sudo -g adm view /var/log/syslog
+           $ sudo -g adm more /var/log/syslog
 
      To run an editor as jim with a different primary group:
 
-           $ sudo -u jim -g audio vi ~jim/sound.txt
+           $ sudoedit -u jim -g audio ~jim/sound.txt
 
      To shut down a machine:
 
@@ -536,7 +575,7 @@ SSEEEE AALLSSOO
 
 HHIISSTTOORRYY
      See the HISTORY file in the ssuuddoo distribution
-     (http://www.sudo.ws/sudo/history.html) for a brief history of sudo.
+     (https://www.sudo.ws/history.html) for a brief history of sudo.
 
 AAUUTTHHOORRSS
      Many people have worked on ssuuddoo over the years; this version consists of
@@ -545,8 +584,8 @@ AAUUTTHHOORRSS
            Todd C. Miller
 
      See the CONTRIBUTORS file in the ssuuddoo distribution
-     (http://www.sudo.ws/sudo/contributors.html) for an exhaustive list of
-     people who have contributed to ssuuddoo.
+     (https://www.sudo.ws/contributors.html) for an exhaustive list of people
+     who have contributed to ssuuddoo.
 
 CCAAVVEEAATTSS
      There is no easy way to prevent a user from gaining a root shell if that
@@ -568,18 +607,18 @@ CCAAVVEEAATTSS
 
 BBUUGGSS
      If you feel you have found a bug in ssuuddoo, please submit a bug report at
-     http://www.sudo.ws/sudo/bugs/
+     https://bugzilla.sudo.ws/
 
 SSUUPPPPOORRTT
      Limited free support is available via the sudo-users mailing list, see
-     http://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or search the
-     archives.
+     https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or search
+     the archives.
 
 DDIISSCCLLAAIIMMEERR
      ssuuddoo is provided ``AS IS'' and any express or implied warranties,
      including, but not limited to, the implied warranties of merchantability
      and fitness for a particular purpose are disclaimed.  See the LICENSE
-     file distributed with ssuuddoo or http://www.sudo.ws/sudo/license.html for
+     file distributed with ssuuddoo or https://www.sudo.ws/license.html for
      complete details.
 
-Sudo 1.8.10                    February 15, 2014                   Sudo 1.8.10
+Sudo 1.8.19                    January 19, 2016                    Sudo 1.8.19

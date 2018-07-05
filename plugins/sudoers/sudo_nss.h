@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2011, 2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2007-2011, 2013-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,10 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDOERS_NSS_H
-#define _SUDOERS_NSS_H
+#ifndef SUDOERS_NSS_H
+#define SUDOERS_NSS_H
 
-struct lbuf;
+struct sudo_lbuf;
 struct passwd;
 
 struct sudo_nss {
@@ -28,9 +28,9 @@ struct sudo_nss {
     int (*setdefs)(struct sudo_nss *nss);
     int (*lookup)(struct sudo_nss *nss, int, int);
     int (*display_cmnd)(struct sudo_nss *nss, struct passwd *);
-    int (*display_defaults)(struct sudo_nss *nss, struct passwd *, struct lbuf *);
-    int (*display_bound_defaults)(struct sudo_nss *nss, struct passwd *, struct lbuf *);
-    int (*display_privs)(struct sudo_nss *nss, struct passwd *, struct lbuf *);
+    int (*display_defaults)(struct sudo_nss *nss, struct passwd *, struct sudo_lbuf *);
+    int (*display_bound_defaults)(struct sudo_nss *nss, struct passwd *, struct sudo_lbuf *);
+    int (*display_privs)(struct sudo_nss *nss, struct passwd *, struct sudo_lbuf *);
     void *handle;
     short ret_if_found;
     short ret_if_notfound;
@@ -40,4 +40,4 @@ TAILQ_HEAD(sudo_nss_list, sudo_nss);
 
 struct sudo_nss_list *sudo_read_nss(void);
 
-#endif /* _SUDOERS_NSS_H */
+#endif /* SUDOERS_NSS_H */

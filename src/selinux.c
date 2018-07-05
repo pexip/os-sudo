@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2009-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  * Copyright (c) 2008 Dan Walsh <dwalsh@redhat.com>
  *
  * Borrowed heavily from newrole source code
@@ -26,18 +26,18 @@
 
 #include <config.h>
 
+#ifdef HAVE_SELINUX
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
 
-#include <selinux/flask.h>             /* for SECCLASS_CHR_FILE */
 #include <selinux/selinux.h>           /* for is_selinux_enabled() */
 #include <selinux/context.h>           /* for context-mangling functions */
 #include <selinux/get_default_type.h>
@@ -63,7 +63,7 @@ static struct selinux_state {
 #ifdef HAVE_LINUX_AUDIT
 static int
 audit_role_change(const security_context_t old_context,
-    const security_context_t new_context, const char *ttyn)
+    const security_context_t new_context, const char *ttyn, int result)
 {
     int au_fd, rc = -1;
     char *message;
@@ -74,16 +74,18 @@ audit_role_change(const security_context_t old_context,
         /* Kernel may not have audit support. */
         if (errno != EINVAL && errno != EPROTONOSUPPORT && errno != EAFNOSUPPORT
 )
-            fatal(U_("unable to open audit system"));
+            sudo_fatal(U_("unable to open audit system"));
     } else {
 	/* audit role change using the same format as newrole(1) */
-	easprintf(&message, "newrole: old-context=%s new-context=%s",
+	rc = asprintf(&message, "newrole: old-context=%s new-context=%s",
 	    old_context, new_context);
+	if (rc == -1)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	rc = audit_log_user_message(au_fd, AUDIT_USER_ROLE_CHANGE,
-	    message, NULL, NULL, ttyn, 1);
+	    message, NULL, NULL, ttyn, result);
 	if (rc <= 0)
-	    warning(U_("unable to send audit message"));
-	efree(message);
+	    sudo_warn(U_("unable to send audit message"));
+	free(message);
 	close(au_fd);
     }
 
@@ -110,17 +112,17 @@ selinux_restore_tty(void)
 
     /* Verify that the tty still has the context set by sudo. */
     if ((retval = fgetfilecon(se_state.ttyfd, &chk_tty_context)) < 0) {
-	warning(U_("unable to fgetfilecon %s"), se_state.ttyn);
+	sudo_warn(U_("unable to fgetfilecon %s"), se_state.ttyn);
 	goto skip_relabel;
     }
 
     if ((retval = strcmp(chk_tty_context, se_state.new_tty_context))) {
-	warningx(U_("%s changed labels"), se_state.ttyn);
+	sudo_warnx(U_("%s changed labels"), se_state.ttyn);
 	goto skip_relabel;
     }
 
     if ((retval = fsetfilecon(se_state.ttyfd, se_state.tty_context)) < 0)
-	warning(U_("unable to restore context for %s"), se_state.ttyn);
+	sudo_warn(U_("unable to restore context for %s"), se_state.ttyn);
 
 skip_relabel:
     if (se_state.ttyfd != -1) {
@@ -158,34 +160,37 @@ relabel_tty(const char *ttyn, int ptyfd)
 
     /* If sudo is not allocating a pty for the command, open current tty. */
     if (ptyfd == -1) {
-	se_state.ttyfd = open(ttyn, O_RDWR|O_NONBLOCK);
+	se_state.ttyfd = open(ttyn, O_RDWR|O_NOCTTY|O_NONBLOCK);
 	if (se_state.ttyfd == -1) {
-	    warning(U_("unable to open %s, not relabeling tty"), ttyn);
-	    if (se_state.enforcing)
-		goto bad;
+	    sudo_warn(U_("unable to open %s, not relabeling tty"), ttyn);
+	    goto bad;
 	}
 	(void)fcntl(se_state.ttyfd, F_SETFL,
 	    fcntl(se_state.ttyfd, F_GETFL, 0) & ~O_NONBLOCK);
     }
 
     if (fgetfilecon(se_state.ttyfd, &tty_con) < 0) {
-	warning(U_("unable to get current tty context, not relabeling tty"));
-	if (se_state.enforcing)
-	    goto bad;
+	sudo_warn(U_("unable to get current tty context, not relabeling tty"));
+	goto bad;
     }
 
-    if (tty_con && (security_compute_relabel(se_state.new_context, tty_con,
-	SECCLASS_CHR_FILE, &new_tty_con) < 0)) {
-	warning(U_("unable to get new tty context, not relabeling tty"));
-	if (se_state.enforcing)
+    if (tty_con) {
+	security_class_t tclass = string_to_security_class("chr_file");
+	if (tclass == 0) {
+	    sudo_warn(U_("unknown security class \"chr_file\", not relabeling tty"));
 	    goto bad;
+	}
+	if (security_compute_relabel(se_state.new_context, tty_con,
+	    tclass, &new_tty_con) < 0) {
+	    sudo_warn(U_("unable to get new tty context, not relabeling tty"));
+	    goto bad;
+	}
     }
 
     if (new_tty_con != NULL) {
 	if (fsetfilecon(se_state.ttyfd, new_tty_con) < 0) {
-	    warning(U_("unable to set new tty context"));
-	    if (se_state.enforcing)
-		goto bad;
+	    sudo_warn(U_("unable to set new tty context"));
+	    goto bad;
 	}
     }
 
@@ -193,27 +198,26 @@ relabel_tty(const char *ttyn, int ptyfd)
 	/* Reopen pty that was relabeled, std{in,out,err} are reset later. */
 	se_state.ttyfd = open(ttyn, O_RDWR|O_NOCTTY, 0);
 	if (se_state.ttyfd == -1) {
-	    warning(U_("unable to open %s"), ttyn);
-	    if (se_state.enforcing)
-		goto bad;
+	    sudo_warn(U_("unable to open %s"), ttyn);
+	    goto bad;
 	}
 	if (dup2(se_state.ttyfd, ptyfd) == -1) {
-	    warning("dup2");
+	    sudo_warn("dup2");
 	    goto bad;
 	}
     } else {
 	/* Re-open tty to get new label and reset std{in,out,err} */
 	close(se_state.ttyfd);
-	se_state.ttyfd = open(ttyn, O_RDWR|O_NONBLOCK);
+	se_state.ttyfd = open(ttyn, O_RDWR|O_NOCTTY|O_NONBLOCK);
 	if (se_state.ttyfd == -1) {
-	    warning(U_("unable to open %s"), ttyn);
+	    sudo_warn(U_("unable to open %s"), ttyn);
 	    goto bad;
 	}
 	(void)fcntl(se_state.ttyfd, F_SETFL,
 	    fcntl(se_state.ttyfd, F_GETFL, 0) & ~O_NONBLOCK);
 	for (fd = STDIN_FILENO; fd <= STDERR_FILENO; fd++) {
 	    if (isatty(fd) && dup2(se_state.ttyfd, fd) == -1) {
-		warning("dup2");
+		sudo_warn("dup2");
 		goto bad;
 	    }
 	}
@@ -232,7 +236,7 @@ bad:
 	se_state.ttyfd = -1;
     }
     freecon(tty_con);
-    debug_return_int(-1);
+    debug_return_int(se_state.enforcing ? -1 : 0);
 }
 
 /*
@@ -249,13 +253,13 @@ get_exec_context(security_context_t old_context, const char *role, const char *t
     
     /* We must have a role, the type is optional (we can use the default). */
     if (!role) {
-	warningx(U_("you must specify a role for type %s"), type);
+	sudo_warnx(U_("you must specify a role for type %s"), type);
 	errno = EINVAL;
 	goto bad;
     }
     if (!type) {
 	if (get_default_type(role, &typebuf)) {
-	    warningx(U_("unable to get default type for role %s"), role);
+	    sudo_warnx(U_("unable to get default type for role %s"), role);
 	    errno = EINVAL;
 	    goto bad;
 	}
@@ -273,33 +277,36 @@ get_exec_context(security_context_t old_context, const char *role, const char *t
      * type we will be running the command as.
      */
     if (context_role_set(context, role)) {
-	warning(U_("failed to set new role %s"), role);
+	sudo_warn(U_("failed to set new role %s"), role);
 	goto bad;
     }
     if (context_type_set(context, type)) {
-	warning(U_("failed to set new type %s"), type);
+	sudo_warn(U_("failed to set new type %s"), type);
 	goto bad;
     }
       
     /*
      * Convert "context" back into a string and verify it.
      */
-    new_context = estrdup(context_str(context));
+    if ((new_context = strdup(context_str(context))) == NULL) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	goto bad;
+    }
     if (security_check_context(new_context) < 0) {
-	warningx(U_("%s is not a valid context"), new_context);
+	sudo_warnx(U_("%s is not a valid context"), new_context);
 	errno = EINVAL;
 	goto bad;
     }
 
 #ifdef DEBUG
-    warningx("Your new context is %s", new_context);
+    sudo_warnx("Your new context is %s", new_context);
 #endif
 
     context_free(context);
     debug_return_ptr(new_context);
 
 bad:
-    efree(typebuf);
+    free(typebuf);
     context_free(context);
     freecon(new_context);
     debug_return_ptr(NULL);
@@ -316,76 +323,81 @@ int
 selinux_setup(const char *role, const char *type, const char *ttyn,
     int ptyfd)
 {
-    int rval = -1;
+    int ret = -1;
     debug_decl(selinux_setup, SUDO_DEBUG_SELINUX)
 
     /* Store the caller's SID in old_context. */
     if (getprevcon(&se_state.old_context)) {
-	warning(U_("failed to get old_context"));
+	sudo_warn(U_("failed to get old_context"));
 	goto done;
     }
 
     se_state.enforcing = security_getenforce();
     if (se_state.enforcing < 0) {
-	warning(U_("unable to determine enforcing mode."));
+	sudo_warn(U_("unable to determine enforcing mode."));
 	goto done;
     }
 
 #ifdef DEBUG
-    warningx("your old context was %s", se_state.old_context);
+    sudo_warnx("your old context was %s", se_state.old_context);
 #endif
     se_state.new_context = get_exec_context(se_state.old_context, role, type);
-    if (!se_state.new_context)
+    if (!se_state.new_context) {
+#ifdef HAVE_LINUX_AUDIT
+	audit_role_change(se_state.old_context, "?",
+	  se_state.ttyn, 0);
+#endif
 	goto done;
+    }
     
     if (relabel_tty(ttyn, ptyfd) < 0) {
-	warning(U_("unable to set tty context to %s"), se_state.new_context);
+	sudo_warn(U_("unable to set tty context to %s"), se_state.new_context);
 	goto done;
     }
 
 #ifdef DEBUG
     if (se_state.ttyfd != -1) {
-	warningx("your old tty context is %s", se_state.tty_context);
-	warningx("your new tty context is %s", se_state.new_tty_context);
+	sudo_warnx("your old tty context is %s", se_state.tty_context);
+	sudo_warnx("your new tty context is %s", se_state.new_tty_context);
     }
 #endif
 
 #ifdef HAVE_LINUX_AUDIT
     audit_role_change(se_state.old_context, se_state.new_context,
-	se_state.ttyn);
+	se_state.ttyn, 1);
 #endif
 
-    rval = 0;
+    ret = 0;
 
 done:
-    debug_return_int(rval);
+    debug_return_int(ret);
 }
 
 void
-selinux_execve(const char *path, char *const argv[], char *const envp[],
-    int noexec)
+selinux_execve(int fd, const char *path, char *const argv[], char *envp[],
+    bool noexec)
 {
     char **nargv;
     const char *sesh;
-    int argc, serrno;
+    int argc, nargc, serrno;
     debug_decl(selinux_execve, SUDO_DEBUG_SELINUX)
 
     sesh = sudo_conf_sesh_path();
     if (sesh == NULL) {
-	warningx("internal error: sesh path not set");
+	sudo_warnx("internal error: sesh path not set");
 	errno = EINVAL;
 	debug_return;
     }
 
     if (setexeccon(se_state.new_context)) {
-	warning(U_("unable to set exec context to %s"), se_state.new_context);
+	sudo_warn(U_("unable to set exec context to %s"), se_state.new_context);
 	if (se_state.enforcing)
 	    debug_return;
     }
 
 #ifdef HAVE_SETKEYCREATECON
     if (setkeycreatecon(se_state.new_context)) {
-	warning(U_("unable to set key creation context to %s"), se_state.new_context);
+	sudo_warn(U_("unable to set key creation context to %s"), se_state.new_context);
 	if (se_state.enforcing)
 	    debug_return;
     }
@@ -398,18 +410,29 @@ selinux_execve(const char *path, char *const argv[], char *const envp[],
      */
     for (argc = 0; argv[argc] != NULL; argc++)
 	continue;
-    nargv = emalloc2(argc + 2, sizeof(char *));
+    nargv = reallocarray(NULL, argc + 3, sizeof(char *));
+    if (nargv == NULL) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	debug_return;
+    }
     if (noexec)
 	nargv[0] = *argv[0] == '-' ? "-sesh-noexec" : "sesh-noexec";
     else
 	nargv[0] = *argv[0] == '-' ? "-sesh" : "sesh";
-    nargv[1] = (char *)path;
-    memcpy(&nargv[2], &argv[1], argc * sizeof(char *)); /* copies NULL */
+    nargc = 1;
+    if (fd != -1 && asprintf(&nargv[nargc++], "--execfd=%d", fd) == -1) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	debug_return;
+    }
+    nargv[nargc++] = (char *)path;
+    memcpy(&nargv[nargc], &argv[1], argc * sizeof(char *)); /* copies NULL */
 
     /* sesh will handle noexec for us. */
-    sudo_execve(sesh, nargv, envp, false);
+    sudo_execve(-1, sesh, nargv, envp, false);
     serrno = errno;
     free(nargv);
     errno = serrno;
     debug_return;
 }
+
+#endif /* HAVE_SELINUX */

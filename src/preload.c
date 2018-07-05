@@ -16,6 +16,7 @@
 
 #include <config.h>
 
+#include <sys/types.h>
 #ifdef HAVE_GSS_KRB5_CCACHE_NAME
 # if defined(HAVE_GSSAPI_GSSAPI_KRB5_H)
 #  include <gssapi/gssapi.h>
@@ -28,6 +29,7 @@
 #endif
 
 #include "sudo_plugin.h"
+#include "sudo_compat.h"
 #include "sudo_dso.h"
 
 #ifdef STATIC_SUDOERS_PLUGIN

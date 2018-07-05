@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -18,23 +18,14 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
 #include <unistd.h>
-#endif /* HAVE_UNISTD_H */
 #include <stdarg.h>
 #include <ctype.h>
 
@@ -115,7 +106,6 @@ print_string_json_unquoted(FILE *fp, const char *str)
 	switch (ch) {
 	case '"':
 	case '\\':
-	case '/':
 	    putc('\\', fp);
 	    break;
 	case '\b':
@@ -162,7 +152,7 @@ static void
 print_pair_json(FILE *fp, const char *pre, const char *name,
     const struct json_value *value, const char *post, int indent)
 {
-    debug_decl(print_pair_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_pair_json, SUDOERS_DEBUG_UTIL)
 
     print_indent(fp, indent);
 
@@ -193,10 +183,10 @@ print_pair_json(FILE *fp, const char *pre, const char *name,
 	fputs(value->u.boolean ? "true" : "false", fp);
 	break;
     case JSON_OBJECT:
-	fatalx("internal error: can't print JSON_OBJECT");
+	sudo_fatalx("internal error: can't print JSON_OBJECT");
 	break;
     case JSON_ARRAY:
-	fatalx("internal error: can't print JSON_ARRAY");
+	sudo_fatalx("internal error: can't print JSON_ARRAY");
 	break;
     }
 
@@ -215,7 +205,7 @@ static void
 printstr_json(FILE *fp, const char *pre, const char *str, const char *post,
     int indent)
 {
-    debug_decl(printstr_json, SUDO_DEBUG_UTIL)
+    debug_decl(printstr_json, SUDOERS_DEBUG_UTIL)
 
     print_indent(fp, indent);
     if (pre != NULL)
@@ -239,7 +229,7 @@ print_command_json(FILE *fp, struct member *m, int indent, bool last_one)
     struct sudo_command *c = (struct sudo_command *)m->name;
     struct json_value value;
     const char *digest_name;
-    debug_decl(print_command_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_command_json, SUDOERS_DEBUG_UTIL)
 
     printstr_json(fp, "{", NULL, NULL, indent);
     if (m->negated || c->digest != NULL) {
@@ -325,7 +315,7 @@ alias_to_word_type(int alias_type)
     case USERALIAS:
 	return TYPE_USERNAME;
     default:
-	fatalx_nodebug("unexpected alias type %d", alias_type);
+	sudo_fatalx_nodebug("unexpected alias type %d", alias_type);
     }
 }
 
@@ -345,7 +335,7 @@ defaults_to_word_type(int defaults_type)
     case DEFAULTS_USER:
 	return TYPE_USERNAME;
     default:
-	fatalx_nodebug("unexpected defaults type %d", defaults_type);
+	sudo_fatalx_nodebug("unexpected defaults type %d", defaults_type);
     }
 }
 
@@ -362,7 +352,7 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
     const char *typestr;
     const char *errstr;
     id_t id;
-    debug_decl(print_member_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_member_json, SUDOERS_DEBUG_UTIL)
 
     /* Most of the time we print a string. */
     value.type = JSON_STRING;
@@ -375,9 +365,9 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	    value.u.string++;
 	    typestr = "nonunixgroup";
 	    if (*value.u.string == '#') {
-		id = atoid(m->name + 3, NULL, NULL, &errstr);
+		id = sudo_strtoid(m->name + 3, NULL, NULL, &errstr);
 		if (errstr != NULL) {
-		    warningx("internal error: non-Unix group ID %s: \"%s\"",
+		    sudo_warnx("internal error: non-Unix group ID %s: \"%s\"",
 			errstr, m->name);
 		} else {
 		    value.type = JSON_ID;
@@ -388,9 +378,9 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	} else {
 	    typestr = "usergroup";
 	    if (*value.u.string == '#') {
-		id = atoid(m->name + 2, NULL, NULL, &errstr);
+		id = sudo_strtoid(m->name + 2, NULL, NULL, &errstr);
 		if (errstr != NULL) {
-		    warningx("internal error: group ID %s: \"%s\"",
+		    sudo_warnx("internal error: group ID %s: \"%s\"",
 			errstr, m->name);
 		} else {
 		    value.type = JSON_ID;
@@ -422,9 +412,9 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	case TYPE_USERNAME:
 	    typestr = "username";
 	    if (*value.u.string == '#') {
-		id = atoid(m->name + 1, NULL, NULL, &errstr);
+		id = sudo_strtoid(m->name + 1, NULL, NULL, &errstr);
 		if (errstr != NULL) {
-		    warningx("internal error: user ID %s: \"%s\"",
+		    sudo_warnx("internal error: user ID %s: \"%s\"",
 			errstr, m->name);
 		} else {
 		    value.type = JSON_ID;
@@ -434,7 +424,7 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	    }
 	    break;
 	default:
-	    fatalx("unexpected word type %d", word_type);
+	    sudo_fatalx("unexpected word type %d", word_type);
 	}
 	break;
     case ALL:
@@ -456,11 +446,11 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	    typestr = "useralias";
 	    break;
 	default:
-	    fatalx("unexpected word type %d", word_type);
+	    sudo_fatalx("unexpected word type %d", word_type);
 	}
 	break;
     default:
-	fatalx("unexpected member type %d", m->type);
+	sudo_fatalx("unexpected member type %d", m->type);
     }
 
     if (m->negated) {
@@ -494,7 +484,7 @@ print_alias_json(void *v1, void *v2)
     struct alias *a = v1;
     struct json_alias_closure *closure = v2;
     struct member *m;
-    debug_decl(print_alias_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_alias_json, SUDOERS_DEBUG_UTIL)
 
     if (a->type != closure->alias_type)
 	debug_return_int(0);
@@ -527,7 +517,7 @@ static void
 print_binding_json(FILE *fp, struct member_list *binding, int type, int indent)
 {
     struct member *m;
-    debug_decl(print_binding_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_binding_json, SUDOERS_DEBUG_UTIL)
 
     if (TAILQ_EMPTY(binding))
 	debug_return;
@@ -555,7 +545,7 @@ print_defaults_list_json(FILE *fp, struct defaults *def, int indent)
 {
     char savech, *start, *end = def->val;
     struct json_value value;
-    debug_decl(print_defaults_list_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_defaults_list_json, SUDOERS_DEBUG_UTIL)
 
     fprintf(fp, "%*s{\n", indent, "");
     indent += 4;
@@ -571,7 +561,7 @@ print_defaults_list_json(FILE *fp, struct defaults *def, int indent)
 	value.u.string = "list_assign";
 	break;
     default:
-	warningx("internal error: unexpected list op %d", def->op);
+	sudo_warnx("internal error: unexpected list op %d", def->op);
 	value.u.string = "unsupported";
 	break;
     }
@@ -583,13 +573,13 @@ print_defaults_list_json(FILE *fp, struct defaults *def, int indent)
     do {
 	/* Remove leading blanks, must have a non-empty string. */
 	for (start = end; isblank((unsigned char)*start); start++)
-	    ;
+	    continue;
 	if (*start == '\0')
 	    break;
 
 	/* Find the end and print it. */
 	for (end = start; *end && !isblank((unsigned char)*end); end++)
-	    ;
+	    continue;
 	savech = *end;
 	*end = '\0';
 	print_string_json(fp, start);
@@ -628,7 +618,7 @@ print_defaults_json(FILE *fp, int indent, bool need_comma)
     struct json_value value;
     struct defaults *def, *next;
     int type;
-    debug_decl(print_defaults_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_defaults_json, SUDOERS_DEBUG_UTIL)
 
     if (TAILQ_EMPTY(&defaults))
 	debug_return_bool(need_comma);
@@ -639,7 +629,7 @@ print_defaults_json(FILE *fp, int indent, bool need_comma)
     TAILQ_FOREACH_SAFE(def, &defaults, entries, next) {
 	type = get_defaults_type(def);
 	if (type == -1) {
-	    warningx(U_("unknown defaults entry `%s'"), def->var);
+	    sudo_warnx(U_("unknown defaults entry \"%s\""), def->var);
 	    /* XXX - just pass it through as a string anyway? */
 	    continue;
 	}
@@ -674,9 +664,9 @@ print_defaults_json(FILE *fp, int indent, bool need_comma)
 	    def = next;
 	    type = get_defaults_type(def);
 	    if (type == -1) {
-		warningx(U_("unknown defaults entry `%s'"), def->var);
+		sudo_warnx(U_("unknown defaults entry \"%s\""), def->var);
 		/* XXX - just pass it through as a string anyway? */
-		break;;
+		break;
 	    }
 	    fputs(",\n", fp);
 	}
@@ -706,7 +696,7 @@ print_aliases_by_type_json(FILE *fp, int alias_type, const char *title,
     int indent, bool need_comma)
 {
     struct json_alias_closure closure;
-    debug_decl(print_aliases_by_type_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_aliases_by_type_json, SUDOERS_DEBUG_UTIL)
 
     closure.fp = fp;
     closure.indent = indent;
@@ -733,7 +723,7 @@ print_aliases_by_type_json(FILE *fp, int alias_type, const char *title,
 static bool
 print_aliases_json(FILE *fp, int indent, bool need_comma)
 {
-    debug_decl(print_aliases_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_aliases_json, SUDOERS_DEBUG_UTIL)
 
     need_comma = print_aliases_by_type_json(fp, USERALIAS, "User_Aliases",
 	indent, need_comma);
@@ -746,22 +736,6 @@ print_aliases_json(FILE *fp, int indent, bool need_comma)
 
     debug_return_bool(need_comma);
 }
-
-/* XXX these are all duplicated w/ parse.c */
-#define RUNAS_CHANGED(cs1, cs2) \
-	(cs1 == NULL || cs2 == NULL || \
-	 cs1->runasuserlist != cs2->runasuserlist || \
-	 cs1->runasgrouplist != cs2->runasgrouplist)
-
-#define TAG_SET(tt) \
-	((tt) != UNSPEC && (tt) != IMPLIED)
-
-#define TAGS_CHANGED(ot, nt) \
-	((TAG_SET((nt).setenv) && (nt).setenv != (ot).setenv) || \
-	 (TAG_SET((nt).noexec) && (nt).noexec != (ot).noexec) || \
-	 (TAG_SET((nt).nopasswd) && (nt).nopasswd != (ot).nopasswd) || \
-	 (TAG_SET((nt).log_input) && (nt).log_input != (ot).log_input) || \
-	 (TAG_SET((nt).log_output) && (nt).log_output != (ot).log_output))
 
 /*
  * Print a Cmnd_Spec in JSON format at the specified indent level.
@@ -776,7 +750,7 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
     struct json_value value;
     struct member *m;
     bool last_one;
-    debug_decl(print_cmndspec_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_cmndspec_json, SUDOERS_DEBUG_UTIL)
 
     /* Open Cmnd_Spec object. */
     fprintf(fp, "%*s{\n", indent, "");
@@ -807,47 +781,59 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
     }
 
     /* Print tags */
-    if (cs->tags.nopasswd != UNSPEC || cs->tags.noexec != UNSPEC ||
-	cs->tags.setenv != UNSPEC || cs->tags.log_input != UNSPEC ||
-	cs->tags.log_output != UNSPEC) {
+    if (TAGS_SET(cs->tags)) {
+	struct cmndtag tag = cs->tags;
+
 	fprintf(fp, "%*s\"Options\": [\n", indent, "");
 	indent += 4;
-	if (cs->tags.nopasswd != UNSPEC) {
+	if (tag.nopasswd != UNSPEC) {
 	    value.type = JSON_BOOL;
-	    value.u.boolean = !cs->tags.nopasswd;
-	    last_one = cs->tags.noexec == UNSPEC &&
-		cs->tags.setenv == UNSPEC && cs->tags.log_input == UNSPEC &&
-		cs->tags.log_output == UNSPEC;
+	    value.u.boolean = !tag.nopasswd;
+	    tag.nopasswd = UNSPEC;
 	    print_pair_json(fp, "{ ", "authenticate", &value,
-		last_one ? " }\n" : " },\n", indent);
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
 	}
-	if (cs->tags.noexec != UNSPEC) {
+	if (tag.noexec != UNSPEC) {
 	    value.type = JSON_BOOL;
-	    value.u.boolean = cs->tags.noexec;
-	    last_one = cs->tags.setenv == UNSPEC &&
-		cs->tags.log_input == UNSPEC && cs->tags.log_output == UNSPEC;
+	    value.u.boolean = tag.noexec;
+	    tag.noexec = UNSPEC;
 	    print_pair_json(fp, "{ ", "noexec", &value,
-		last_one ? " }\n" : " },\n", indent);
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
 	}
-	if (cs->tags.setenv != UNSPEC) {
+	if (tag.send_mail != UNSPEC) {
 	    value.type = JSON_BOOL;
-	    value.u.boolean = cs->tags.setenv;
-	    last_one = cs->tags.log_input == UNSPEC &&
-		cs->tags.log_output == UNSPEC;
+	    value.u.boolean = tag.send_mail;
+	    tag.send_mail = UNSPEC;
+	    print_pair_json(fp, "{ ", "send_mail", &value,
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	}
+	if (tag.setenv != UNSPEC) {
+	    value.type = JSON_BOOL;
+	    value.u.boolean = tag.setenv;
+	    tag.setenv = UNSPEC;
 	    print_pair_json(fp, "{ ", "setenv", &value,
-		last_one ? " }\n" : " },\n", indent);
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
 	}
-	if (cs->tags.log_input != UNSPEC) {
+	if (tag.follow != UNSPEC) {
 	    value.type = JSON_BOOL;
-	    value.u.boolean = cs->tags.log_input;
-	    last_one = cs->tags.log_output == UNSPEC;
+	    value.u.boolean = tag.follow;
+	    tag.follow = UNSPEC;
+	    print_pair_json(fp, "{ ", "sudoedit_follow", &value,
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	}
+	if (tag.log_input != UNSPEC) {
+	    value.type = JSON_BOOL;
+	    value.u.boolean = tag.log_input;
+	    tag.log_input = UNSPEC;
 	    print_pair_json(fp, "{ ", "log_input", &value,
-		last_one ? " }\n" : " },\n", indent);
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
 	}
-	if (cs->tags.log_output != UNSPEC) {
+	if (tag.log_output != UNSPEC) {
 	    value.type = JSON_BOOL;
-	    value.u.boolean = cs->tags.log_output;
-	    print_pair_json(fp, "{ ", "log_output", &value, " }\n", indent);
+	    value.u.boolean = tag.log_output;
+	    tag.log_output = UNSPEC;
+	    print_pair_json(fp, "{ ", "log_output", &value,
+		TAGS_SET(tag) ? " },\n" : " }\n", indent);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
@@ -934,7 +920,7 @@ print_userspec_json(FILE *fp, struct userspec *us, int indent)
     struct privilege *priv;
     struct member *m;
     struct cmndspec *cs, *next;
-    debug_decl(print_userspec_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_userspec_json, SUDOERS_DEBUG_UTIL)
 
     /*
      * Each userspec struct may contain multiple privileges for
@@ -988,7 +974,7 @@ static bool
 print_userspecs_json(FILE *fp, int indent, bool need_comma)
 {
     struct userspec *us;
-    debug_decl(print_userspecs_json, SUDO_DEBUG_UTIL)
+    debug_decl(print_userspecs_json, SUDOERS_DEBUG_UTIL)
 
     if (TAILQ_EMPTY(&userspecs))
 	debug_return_bool(need_comma);
@@ -1012,42 +998,51 @@ bool
 export_sudoers(const char *sudoers_path, const char *export_path,
     bool quiet, bool strict)
 {
-    bool ok = false, need_comma = false;
+    bool ret = false, need_comma = false;
     const int indent = 4;
     FILE *export_fp = stdout;
-    debug_decl(export_sudoers, SUDO_DEBUG_UTIL)
+    debug_decl(export_sudoers, SUDOERS_DEBUG_UTIL)
 
     if (strcmp(sudoers_path, "-") == 0) {
 	sudoersin = stdin;
 	sudoers_path = "stdin";
     } else if ((sudoersin = fopen(sudoers_path, "r")) == NULL) {
 	if (!quiet)
-	    warning(U_("unable to open %s"), sudoers_path);
+	    sudo_warn(U_("unable to open %s"), sudoers_path);
 	goto done;
     }
     if (strcmp(export_path, "-") != 0) {
+	if (strcmp(sudoers_path, export_path) == 0) {
+	    if (!quiet) {
+		sudo_warnx(U_("%s: input and output files must be different"),
+		    sudoers_path);
+	    }
+	    goto done;
+	}
 	if ((export_fp = fopen(export_path, "w")) == NULL) {
 	    if (!quiet)
-		warning(U_("unable to open %s"), export_path);
+		sudo_warn(U_("unable to open %s"), export_path);
 	    goto done;
 	}
     }
     init_parser(sudoers_path, quiet);
     if (sudoersparse() && !parse_error) {
 	if (!quiet)
-	    warningx(U_("failed to parse %s file, unknown error"), sudoers_path);
+	    sudo_warnx(U_("failed to parse %s file, unknown error"), sudoers_path);
 	parse_error = true;
-	errorfile = sudoers_path;
+	rcstr_delref(errorfile);
+	if ((errorfile = rcstr_dup(sudoers_path)) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     }
-    ok = !parse_error;
+    ret = !parse_error;
 
     if (parse_error) {
 	if (!quiet) {
 	    if (errorlineno != -1)
-		warningx(_("parse error in %s near line %d\n"),
+		sudo_warnx(U_("parse error in %s near line %d\n"),
 		    errorfile, errorlineno);
 	    else if (errorfile != NULL)
-		warningx(_("parse error in %s\n"), errorfile);
+		sudo_warnx(U_("parse error in %s\n"), errorfile);
 	}
 	goto done;
     }
@@ -1068,7 +1063,12 @@ export_sudoers(const char *sudoers_path, const char *export_path,
     fputs("\n}\n", export_fp);
 
 done:
-    if (export_fp != stdout)
-	fclose(export_fp);
-    debug_return_bool(ok);
+    if (export_fp != NULL) {
+	(void)fflush(export_fp);
+	if (ferror(export_fp))
+	    ret = false;
+	if (export_fp != stdout)
+	    fclose(export_fp);
+    }
+    debug_return_bool(ret);
 }

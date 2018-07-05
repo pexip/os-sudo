@@ -18,7 +18,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
@@ -101,10 +100,10 @@ group_plugin_load(char *plugin_info)
 	return -1;
     }
 
-    if (GROUP_API_VERSION_GET_MAJOR(group_plugin->version) != GROUP_API_VERSION_MAJOR) {
+    if (SUDO_API_VERSION_GET_MAJOR(group_plugin->version) != GROUP_API_VERSION_MAJOR) {
 	fprintf(stderr,
 	    "%s: incompatible group plugin major version %d, expected %d\n",
-	    path, GROUP_API_VERSION_GET_MAJOR(group_plugin->version),
+	    path, SUDO_API_VERSION_GET_MAJOR(group_plugin->version),
 	    GROUP_API_VERSION_MAJOR);
 	return -1;
     }
@@ -125,13 +124,15 @@ group_plugin_load(char *plugin_info)
             }
         }
 	if (ac != 0) 	{
+	    char *last;
+
 	    argv = malloc(ac * sizeof(char *));
 	    if (argv == NULL) {
 		perror(NULL);
 		return -1;
 	    }
 	    ac = 0;
-	    for ((cp = strtok(args, " \t")); cp; (cp = strtok(NULL, " \t")))
+	    for ((cp = strtok_r(args, " \t", &last)); cp != NULL; (cp = strtok_r(NULL, " \t", &last)))
 		argv[ac++] = cp;
 	}
     }

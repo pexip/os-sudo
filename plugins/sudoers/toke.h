@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2013, 2015-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,13 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDOERS_TOKE_H
-#define _SUDOERS_TOKE_H
+#ifndef SUDOERS_TOKE_H
+#define SUDOERS_TOKE_H
 
-bool append(const char *, int);
-bool fill_args(const char *, int, int);
-bool fill_cmnd(const char *, int);
-bool fill_txt(const char *, int, int);
+bool append(const char *, size_t);
+bool fill_args(const char *, size_t, int);
+bool fill_cmnd(const char *, size_t);
+bool fill_txt(const char *, size_t, size_t);
 bool ipv6_valid(const char *s);
 int sudoers_trace_print(const char *msg);
 void sudoerserror(const char *);
@@ -31,12 +31,9 @@ extern int (*trace_print)(const char *msg);
 
 #define fill(a, b)	fill_txt(a, b, 0)
 
-/* realloc() to size + COMMANDARGINC to make room for command args */
-#define COMMANDARGINC   64
-
 #define LEXTRACE(msg)   do {						\
     if (trace_print != NULL)						\
 	(*trace_print)(msg);						\
 } while (0);
 
-#endif /* _SUDOERS_TOKE_H */
+#endif /* SUDOERS_TOKE_H */

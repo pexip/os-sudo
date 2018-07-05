@@ -1,6 +1,6 @@
 %{
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2013
+ * Copyright (c) 1996, 1998-2005, 2007-2013, 2014-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -26,24 +26,18 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
+#include <stddef.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
-#ifdef HAVE_INTTYPES_H
+#include <unistd.h>
+#if defined(HAVE_STDINT_H)
+# include <stdint.h>
+#elif defined(HAVE_INTTYPES_H)
 # include <inttypes.h>
 #endif
 #if defined(YYBISON) && defined(HAVE_ALLOCA_H) && !defined(__GNUC__)
@@ -55,18 +49,8 @@
 #include "parse.h"
 #include "toke.h"
 
-/*
- * We must define SIZE_MAX for yacc's skeleton.c.
- * If there is no SIZE_MAX or SIZE_T_MAX we have to assume that size_t
- * could be signed (as it is on SunOS 4.x).
- */
-#ifndef SIZE_MAX
-# ifdef SIZE_T_MAX
-#  define SIZE_MAX	SIZE_T_MAX
-# else
-#  define SIZE_MAX	INT_MAX
-# endif /* SIZE_T_MAX */
-#endif /* SIZE_MAX */
+/* If we last saw a newline the entry is on the preceding line. */
+#define this_lineno	(last_token == COMMENT ? sudolineno - 1 : sudolineno)
 
 /*
  * Globals
@@ -74,7 +58,7 @@
 bool sudoers_warnings = true;
 bool parse_error = false;
 int errorlineno = -1;
-const char *errorfile = NULL;
+char *errorfile = NULL;
 
 struct defaults_list defaults = TAILQ_HEAD_INITIALIZER(defaults);
 struct userspec_list userspecs = TAILQ_HEAD_INITIALIZER(userspecs);
@@ -82,9 +66,9 @@ struct userspec_list userspecs = TAILQ_HEAD_INITIALIZER(userspecs);
 /*
  * Local protoypes
  */
-static void  add_defaults(int, struct member *, struct defaults *);
-static void  add_userspec(struct member *, struct privilege *);
-static struct defaults *new_default(char *, char *, int);
+static bool add_defaults(int, struct member *, struct defaults *);
+static bool add_userspec(struct member *, struct privilege *);
+static struct defaults *new_default(char *, char *, short);
 static struct member *new_member(char *, int);
 static struct sudo_digest *new_digest(int, const char *);
 %}
@@ -128,6 +112,10 @@ static struct sudo_digest *new_digest(int, const char *);
 %token <tok>	 NOLOG_INPUT		/* don't log user's cmnd input */
 %token <tok>	 LOG_OUTPUT		/* log cmnd output */
 %token <tok>	 NOLOG_OUTPUT		/* don't log cmnd output */
+%token <tok>	 MAIL			/* mail log message */
+%token <tok>	 NOMAIL			/* don't mail log message */
+%token <tok>	 FOLLOW			/* follow symbolic links */
+%token <tok>	 NOFOLLOW		/* don't follow symbolic links */
 %token <tok>	 ALL			/* ALL keyword */
 %token <tok>	 COMMENT		/* comment and/or carriage return */
 %token <tok>	 HOSTALIAS		/* Host_Alias keyword */
@@ -142,10 +130,10 @@ static struct sudo_digest *new_digest(int, const char *);
 %token <tok>	 PRIVS			/* Solaris privileges */
 %token <tok>	 LIMITPRIVS		/* Solaris limit privileges */
 %token <tok>	 MYSELF			/* run as myself, not another user */
-%token <tok>	 SHA224			/* sha224 digest */
-%token <tok>	 SHA256			/* sha256 digest */
-%token <tok>	 SHA384			/* sha384 digest */
-%token <tok>	 SHA512			/* sha512 digest */
+%token <tok>	 SHA224_TOK		/* sha224 token */
+%token <tok>	 SHA256_TOK		/* sha256 token */
+%token <tok>	 SHA384_TOK		/* sha384 token */
+%token <tok>	 SHA512_TOK		/* sha512 token */
 
 %type <cmndspec>  cmndspec
 %type <cmndspec>  cmndspeclist
@@ -194,7 +182,10 @@ entry		:	COMMENT {
 			    yyerrok;
 			}
 		|	userlist privileges {
-			    add_userspec($1, $2);
+			    if (!add_userspec($1, $2)) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	USERALIAS useraliases {
 			    ;
@@ -209,19 +200,24 @@ entry		:	COMMENT {
 			    ;
 			}
 		|	DEFAULTS defaults_list {
-			    add_defaults(DEFAULTS, NULL, $2);
+			    if (!add_defaults(DEFAULTS, NULL, $2))
+				YYERROR;
 			}
 		|	DEFAULTS_USER userlist defaults_list {
-			    add_defaults(DEFAULTS_USER, $2, $3);
+			    if (!add_defaults(DEFAULTS_USER, $2, $3))
+				YYERROR;
 			}
 		|	DEFAULTS_RUNAS userlist defaults_list {
-			    add_defaults(DEFAULTS_RUNAS, $2, $3);
+			    if (!add_defaults(DEFAULTS_RUNAS, $2, $3))
+				YYERROR;
 			}
 		|	DEFAULTS_HOST hostlist defaults_list {
-			    add_defaults(DEFAULTS_HOST, $2, $3);
+			    if (!add_defaults(DEFAULTS_HOST, $2, $3))
+				YYERROR;
 			}
 		|	DEFAULTS_CMND cmndlist defaults_list {
-			    add_defaults(DEFAULTS_CMND, $2, $3);
+			    if (!add_defaults(DEFAULTS_CMND, $2, $3))
+				YYERROR;
 			}
 		;
 
@@ -234,18 +230,38 @@ defaults_list	:	defaults_entry
 
 defaults_entry	:	DEFVAR {
 			    $$ = new_default($1, NULL, true);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	'!' DEFVAR {
 			    $$ = new_default($2, NULL, false);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	DEFVAR '=' WORD {
 			    $$ = new_default($1, $3, true);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	DEFVAR '+' WORD {
 			    $$ = new_default($1, $3, '+');
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	DEFVAR '-' WORD {
 			    $$ = new_default($1, $3, '-');
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -257,7 +273,11 @@ privileges	:	privilege
 		;
 
 privilege	:	hostlist '=' cmndspeclist {
-			    struct privilege *p = ecalloc(1, sizeof(*p));
+			    struct privilege *p = calloc(1, sizeof(*p));
+			    if (p == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    HLTQ_TO_TAILQ(&p->hostlist, $1, entries);
 			    HLTQ_TO_TAILQ(&p->cmndlist, $3, entries);
 			    HLTQ_INIT(p, entries);
@@ -277,18 +297,38 @@ ophost		:	host {
 
 host		:	ALIAS {
 			    $$ = new_member($1, ALIAS);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	ALL {
 			    $$ = new_member(NULL, ALL);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	NETGROUP {
 			    $$ = new_member($1, NETGROUP);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	NTWKADDR {
 			    $$ = new_member($1, NTWKADDR);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	WORD {
 			    $$ = new_member($1, WORD);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -323,6 +363,10 @@ cmndspeclist	:	cmndspec
 				$3->tags.log_input = prev->tags.log_input;
 			    if ($3->tags.log_output == UNSPEC)
 				$3->tags.log_output = prev->tags.log_output;
+			    if ($3->tags.send_mail == UNSPEC)
+				$3->tags.send_mail = prev->tags.send_mail;
+			    if ($3->tags.follow == UNSPEC)
+				$3->tags.follow = prev->tags.follow;
 			    if (($3->runasuserlist == NULL &&
 				 $3->runasgrouplist == NULL) &&
 				(prev->runasuserlist != NULL ||
@@ -335,21 +379,33 @@ cmndspeclist	:	cmndspec
 		;
 
 cmndspec	:	runasspec selinux solarisprivs cmndtag digcmnd {
-			    struct cmndspec *cs = ecalloc(1, sizeof(*cs));
+			    struct cmndspec *cs = calloc(1, sizeof(*cs));
+			    if (cs == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    if ($1 != NULL) {
 				if ($1->runasusers != NULL) {
 				    cs->runasuserlist =
-					emalloc(sizeof(*cs->runasuserlist));
+					malloc(sizeof(*cs->runasuserlist));
+				    if (cs->runasuserlist == NULL) {
+					sudoerserror(N_("unable to allocate memory"));
+					YYERROR;
+				    }
 				    HLTQ_TO_TAILQ(cs->runasuserlist,
 					$1->runasusers, entries);
 				}
 				if ($1->runasgroups != NULL) {
 				    cs->runasgrouplist =
-					emalloc(sizeof(*cs->runasgrouplist));
+					malloc(sizeof(*cs->runasgrouplist));
+				    if (cs->runasgrouplist == NULL) {
+					sudoerserror(N_("unable to allocate memory"));
+					YYERROR;
+				    }
 				    HLTQ_TO_TAILQ(cs->runasgrouplist,
 					$1->runasgroups, entries);
 				}
-				efree($1);
+				free($1);
 			    }
 #ifdef HAVE_SELINUX
 			    cs->role = $2.role;
@@ -370,17 +426,33 @@ cmndspec	:	runasspec selinux solarisprivs cmndtag digcmnd {
 			}
 		;
 
-digest		:	SHA224 ':' DIGEST {
+digest		:	SHA224_TOK ':' DIGEST {
 			    $$ = new_digest(SUDO_DIGEST_SHA224, $3);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
-		|	SHA256 ':' DIGEST {
+		|	SHA256_TOK ':' DIGEST {
 			    $$ = new_digest(SUDO_DIGEST_SHA256, $3);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
-		|	SHA384 ':' DIGEST {
+		|	SHA384_TOK ':' DIGEST {
 			    $$ = new_digest(SUDO_DIGEST_SHA384, $3);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
-		|	SHA512 ':' DIGEST {
+		|	SHA512_TOK ':' DIGEST {
 			    $$ = new_digest(SUDO_DIGEST_SHA512, $3);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -388,9 +460,12 @@ digcmnd		:	opcmnd {
 			    $$ = $1;
 			}
 		|	digest opcmnd {
+			    if ($2->type != COMMAND) {
+				sudoerserror(N_("a digest requires a path name"));
+				YYERROR;
+			    }
 			    /* XXX - yuck */
-			    struct sudo_command *c = (struct sudo_command *)($2->name);
-			    c->digest = $1;
+			    ((struct sudo_command *) $2->name)->digest = $1;
 			    $$ = $2;
 			}
 		;
@@ -477,35 +552,66 @@ runasspec	:	/* empty */ {
 		;
 
 runaslist	:	/* empty */ {
-			    $$ = ecalloc(1, sizeof(struct runascontainer));
-			    $$->runasusers = new_member(NULL, MYSELF);
-			    /* $$->runasgroups = NULL; */
+			    $$ = calloc(1, sizeof(struct runascontainer));
+			    if ($$ != NULL) {
+				$$->runasusers = new_member(NULL, MYSELF);
+				/* $$->runasgroups = NULL; */
+				if ($$->runasusers == NULL) {
+				    free($$);
+				    $$ = NULL;
+				}
+			    }
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	userlist {
-			    $$ = ecalloc(1, sizeof(struct runascontainer));
+			    $$ = calloc(1, sizeof(struct runascontainer));
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    $$->runasusers = $1;
 			    /* $$->runasgroups = NULL; */
 			}
 		|	userlist ':' grouplist {
-			    $$ = ecalloc(1, sizeof(struct runascontainer));
+			    $$ = calloc(1, sizeof(struct runascontainer));
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    $$->runasusers = $1;
 			    $$->runasgroups = $3;
 			}
 		|	':' grouplist {
-			    $$ = ecalloc(1, sizeof(struct runascontainer));
+			    $$ = calloc(1, sizeof(struct runascontainer));
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    /* $$->runasusers = NULL; */
 			    $$->runasgroups = $2;
 			}
 		|	':' {
-			    $$ = ecalloc(1, sizeof(struct runascontainer));
-			    $$->runasusers = new_member(NULL, MYSELF);
-			    /* $$->runasgroups = NULL; */
+			    $$ = calloc(1, sizeof(struct runascontainer));
+			    if ($$ != NULL) {
+				$$->runasusers = new_member(NULL, MYSELF);
+				/* $$->runasgroups = NULL; */
+				if ($$->runasusers == NULL) {
+				    free($$);
+				    $$ = NULL;
+				}
+			    }
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
 cmndtag		:	/* empty */ {
-			    $$.nopasswd = $$.noexec = $$.setenv =
-				$$.log_input = $$.log_output = UNSPEC;
+			    TAGS_INIT($$);
 			}
 		|	cmndtag NOPASSWD {
 			    $$.nopasswd = true;
@@ -537,19 +643,48 @@ cmndtag		:	/* empty */ {
 		|	cmndtag NOLOG_OUTPUT {
 			    $$.log_output = false;
 			}
+		|	cmndtag FOLLOW {
+			    $$.follow = true;
+			}
+		|	cmndtag NOFOLLOW {
+			    $$.follow = false;
+			}
+		|	cmndtag MAIL {
+			    $$.send_mail = true;
+			}
+		|	cmndtag NOMAIL {
+			    $$.send_mail = false;
+			}
 		;
 
 cmnd		:	ALL {
 			    $$ = new_member(NULL, ALL);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	ALIAS {
 			    $$ = new_member($1, ALIAS);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	COMMAND {
-			    struct sudo_command *c = ecalloc(1, sizeof(*c));
+			    struct sudo_command *c = calloc(1, sizeof(*c));
+			    if (c == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			    c->cmnd = $1.cmnd;
 			    c->args = $1.args;
 			    $$ = new_member((char *)c, COMMAND);
+			    if ($$ == NULL) {
+				free(c);
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -558,8 +693,9 @@ hostaliases	:	hostalias
 		;
 
 hostalias	:	ALIAS '=' hostlist {
-			    char *s;
-			    if ((s = alias_add($1, HOSTALIAS, $3)) != NULL) {
+			    const char *s;
+			    s = alias_add($1, HOSTALIAS, sudoers, this_lineno, $3);
+			    if (s != NULL) {
 				sudoerserror(s);
 				YYERROR;
 			    }
@@ -578,8 +714,9 @@ cmndaliases	:	cmndalias
 		;
 
 cmndalias	:	ALIAS '=' cmndlist {
-			    char *s;
-			    if ((s = alias_add($1, CMNDALIAS, $3)) != NULL) {
+			    const char *s;
+			    s = alias_add($1, CMNDALIAS, sudoers, this_lineno, $3);
+			    if (s != NULL) {
 				sudoerserror(s);
 				YYERROR;
 			    }
@@ -598,8 +735,9 @@ runasaliases	:	runasalias
 		;
 
 runasalias	:	ALIAS '=' userlist {
-			    char *s;
-			    if ((s = alias_add($1, RUNASALIAS, $3)) != NULL) {
+			    const char *s;
+			    s = alias_add($1, RUNASALIAS, sudoers, this_lineno, $3);
+			    if (s != NULL) {
 				sudoerserror(s);
 				YYERROR;
 			    }
@@ -611,8 +749,9 @@ useraliases	:	useralias
 		;
 
 useralias	:	ALIAS '=' userlist {
-			    char *s;
-			    if ((s = alias_add($1, USERALIAS, $3)) != NULL) {
+			    const char *s;
+			    s = alias_add($1, USERALIAS, sudoers, this_lineno, $3);
+			    if (s != NULL) {
 				sudoerserror(s);
 				YYERROR;
 			    }
@@ -638,18 +777,38 @@ opuser		:	user {
 
 user		:	ALIAS {
 			    $$ = new_member($1, ALIAS);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	ALL {
 			    $$ = new_member(NULL, ALL);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	NETGROUP {
 			    $$ = new_member($1, NETGROUP);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	USERGROUP {
 			    $$ = new_member($1, USERGROUP);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	WORD {
 			    $$ = new_member($1, WORD);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -672,12 +831,24 @@ opgroup		:	group {
 
 group		:	ALIAS {
 			    $$ = new_member($1, ALIAS);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	ALL {
 			    $$ = new_member(NULL, ALL);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		|	WORD {
 			    $$ = new_member($1, WORD);
+			    if ($$ == NULL) {
+				sudoerserror(N_("unable to allocate memory"));
+				YYERROR;
+			    }
 			}
 		;
 
@@ -685,16 +856,13 @@ group		:	ALIAS {
 void
 sudoerserror(const char *s)
 {
-    debug_decl(sudoerserror, SUDO_DEBUG_PARSER)
-
-    /* If we last saw a newline the error is on the preceding line. */
-    if (last_token == COMMENT)
-	sudolineno--;
+    debug_decl(sudoerserror, SUDOERS_DEBUG_PARSER)
 
     /* Save the line the first error occurred on. */
     if (errorlineno == -1) {
-	errorlineno = sudolineno;
-	errorfile = estrdup(sudoers);
+	errorlineno = this_lineno;
+	rcstr_delref(errorfile);
+	errorfile = rcstr_addref(sudoers);
     }
     if (sudoers_warnings && s != NULL) {
 	LEXTRACE("<*> ");
@@ -705,7 +873,7 @@ sudoerserror(const char *s)
 
 	    /* Warnings are displayed in the user's locale. */
 	    sudoers_setlocale(SUDOERS_LOCALE_USER, &oldlocale);
-	    sudo_printf(SUDO_CONV_ERROR_MSG, _(fmt), sudoers, _(s), sudolineno);
+	    sudo_printf(SUDO_CONV_ERROR_MSG, _(fmt), sudoers, _(s), this_lineno);
 	    sudoers_setlocale(oldlocale, NULL);
 	}
 #endif
@@ -715,17 +883,24 @@ sudoerserror(const char *s)
 }
 
 static struct defaults *
-new_default(char *var, char *val, int op)
+new_default(char *var, char *val, short op)
 {
     struct defaults *d;
-    debug_decl(new_default, SUDO_DEBUG_PARSER)
+    debug_decl(new_default, SUDOERS_DEBUG_PARSER)
 
-    d = ecalloc(1, sizeof(struct defaults));
+    if ((d = calloc(1, sizeof(struct defaults))) == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_ptr(NULL);
+    }
+
     d->var = var;
     d->val = val;
     /* d->type = 0; */
     d->op = op;
     /* d->binding = NULL */
+    d->lineno = this_lineno;
+    d->file = rcstr_addref(sudoers);
     HLTQ_INIT(d, entries);
 
     debug_return_ptr(d);
@@ -735,9 +910,14 @@ static struct member *
 new_member(char *name, int type)
 {
     struct member *m;
-    debug_decl(new_member, SUDO_DEBUG_PARSER)
+    debug_decl(new_member, SUDOERS_DEBUG_PARSER)
 
-    m = ecalloc(1, sizeof(struct member));
+    if ((m = calloc(1, sizeof(struct member))) == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_ptr(NULL);
+    }
+
     m->name = name;
     m->type = type;
     HLTQ_INIT(m, entries);
@@ -745,15 +925,26 @@ new_member(char *name, int type)
     debug_return_ptr(m);
 }
 
-struct sudo_digest *
+static struct sudo_digest *
 new_digest(int digest_type, const char *digest_str)
 {
     struct sudo_digest *dig;
-    debug_decl(new_digest, SUDO_DEBUG_PARSER)
+    debug_decl(new_digest, SUDOERS_DEBUG_PARSER)
 
-    dig = emalloc(sizeof(*dig));
+    if ((dig = malloc(sizeof(*dig))) == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_ptr(NULL);
+    }
+
     dig->digest_type = digest_type;
-    dig->digest_str = estrdup(digest_str);
+    dig->digest_str = strdup(digest_str);
+    if (dig->digest_str == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	free(dig);
+	dig = NULL;
+    }
 
     debug_return_ptr(dig);
 }
@@ -763,18 +954,24 @@ new_digest(int digest_type, const char *digest_str)
  * The binding, if non-NULL, specifies a list of hosts, users, or
  * runas users the entries apply to (specified by the type).
  */
-static void
+static bool
 add_defaults(int type, struct member *bmem, struct defaults *defs)
 {
-    struct defaults *d;
+    struct defaults *d, *next;
     struct member_list *binding;
-    debug_decl(add_defaults, SUDO_DEBUG_PARSER)
+    bool ret = true;
+    debug_decl(add_defaults, SUDOERS_DEBUG_PARSER)
 
     if (defs != NULL) {
 	/*
 	 * We use a single binding for each entry in defs.
 	 */
-	binding = emalloc(sizeof(*binding));
+	if ((binding = malloc(sizeof(*binding))) == NULL) {
+	    sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+		"unable to allocate memory");
+	    sudoerserror(N_("unable to allocate memory"));
+	    debug_return_bool(false);
+	}
 	if (bmem != NULL)
 	    HLTQ_TO_TAILQ(binding, bmem, entries);
 	else
@@ -784,53 +981,81 @@ add_defaults(int type, struct member *bmem, struct defaults *defs)
 	 * Set type and binding (who it applies to) for new entries.
 	 * Then add to the global defaults list.
 	 */
-	HLTQ_FOREACH(d, defs, entries) {
+	HLTQ_FOREACH_SAFE(d, defs, entries, next) {
 	    d->type = type;
 	    d->binding = binding;
+	    TAILQ_INSERT_TAIL(&defaults, d, entries);
 	}
-	TAILQ_CONCAT_HLTQ(&defaults, defs, entries);
     }
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
  * Allocate a new struct userspec, populate it, and insert it at the
  * end of the userspecs list.
  */
-static void
+static bool
 add_userspec(struct member *members, struct privilege *privs)
 {
     struct userspec *u;
-    debug_decl(add_userspec, SUDO_DEBUG_PARSER)
+    debug_decl(add_userspec, SUDOERS_DEBUG_PARSER)
 
-    u = ecalloc(1, sizeof(*u));
+    if ((u = calloc(1, sizeof(*u))) == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_bool(false);
+    }
+    u->lineno = this_lineno;
+    u->file = rcstr_addref(sudoers);
     HLTQ_TO_TAILQ(&u->users, members, entries);
     HLTQ_TO_TAILQ(&u->privileges, privs, entries);
     TAILQ_INSERT_TAIL(&userspecs, u, entries);
 
-    debug_return;
+    debug_return_bool(true);
+}
+
+/*
+ * Free a tailq of members but not the struct member_list container itself.
+ */
+void
+free_members(struct member_list *members)
+{
+    struct member *m, *next;
+    struct sudo_command *c;
+
+    TAILQ_FOREACH_SAFE(m, members, entries, next) {
+	if (m->type == COMMAND) {
+		c = (struct sudo_command *) m->name;
+		free(c->cmnd);
+		free(c->args);
+	}
+	free(m->name);
+	free(m);
+    }
 }
 
 /*
  * Free up space used by data structures from a previous parser run and sets
  * the current sudoers file to path.
  */
-void
+bool
 init_parser(const char *path, bool quiet)
 {
     struct member_list *binding;
     struct defaults *d, *d_next;
     struct userspec *us, *us_next;
-    debug_decl(init_parser, SUDO_DEBUG_PARSER)
+    bool ret = true;
+    debug_decl(init_parser, SUDOERS_DEBUG_PARSER)
 
+    /* XXX - move into a free function */
     TAILQ_FOREACH_SAFE(us, &userspecs, entries, us_next) {
 	struct member *m, *m_next;
 	struct privilege *priv, *priv_next;
 
 	TAILQ_FOREACH_SAFE(m, &us->users, entries, m_next) {
-	    efree(m->name);
-	    efree(m);
+	    free(m->name);
+	    free(m);
 	}
 	TAILQ_FOREACH_SAFE(priv, &us->privileges, entries, priv_next) {
 	    struct member_list *runasuserlist = NULL, *runasgrouplist = NULL;
@@ -843,100 +1068,102 @@ init_parser(const char *path, bool quiet)
 #endif /* HAVE_PRIV_SET */
 
 	    TAILQ_FOREACH_SAFE(m, &priv->hostlist, entries, m_next) {
-		efree(m->name);
-		efree(m);
+		free(m->name);
+		free(m);
 	    }
 	    TAILQ_FOREACH_SAFE(cs, &priv->cmndlist, entries, cs_next) {
 #ifdef HAVE_SELINUX
 		/* Only free the first instance of a role/type. */
 		if (cs->role != role) {
 		    role = cs->role;
-		    efree(cs->role);
+		    free(cs->role);
 		}
 		if (cs->type != type) {
 		    type = cs->type;
-		    efree(cs->type);
+		    free(cs->type);
 		}
 #endif /* HAVE_SELINUX */
 #ifdef HAVE_PRIV_SET
 		/* Only free the first instance of privs/limitprivs. */
 		if (cs->privs != privs) {
 		    privs = cs->privs;
-		    efree(cs->privs);
+		    free(cs->privs);
 		}
 		if (cs->limitprivs != limitprivs) {
 		    limitprivs = cs->limitprivs;
-		    efree(cs->limitprivs);
+		    free(cs->limitprivs);
 		}
 #endif /* HAVE_PRIV_SET */
 		/* Only free the first instance of runas user/group lists. */
 		if (cs->runasuserlist && cs->runasuserlist != runasuserlist) {
 		    runasuserlist = cs->runasuserlist;
 		    TAILQ_FOREACH_SAFE(m, runasuserlist, entries, m_next) {
-			efree(m->name);
-			efree(m);
+			free(m->name);
+			free(m);
 		    }
-		    efree(runasuserlist);
+		    free(runasuserlist);
 		}
 		if (cs->runasgrouplist && cs->runasgrouplist != runasgrouplist) {
 		    runasgrouplist = cs->runasgrouplist;
 		    TAILQ_FOREACH_SAFE(m, runasgrouplist, entries, m_next) {
-			efree(m->name);
-			efree(m);
+			free(m->name);
+			free(m);
 		    }
-		    efree(runasgrouplist);
+		    free(runasgrouplist);
 		}
 		if (cs->cmnd->type == COMMAND) {
 			struct sudo_command *c =
 			    (struct sudo_command *) cs->cmnd->name;
-			efree(c->cmnd);
-			efree(c->args);
+			free(c->cmnd);
+			free(c->args);
 		}
-		efree(cs->cmnd->name);
-		efree(cs->cmnd);
-		efree(cs);
+		free(cs->cmnd->name);
+		free(cs->cmnd);
+		free(cs);
 	    }
-	    efree(priv);
+	    free(priv);
 	}
-	efree(us);
+	rcstr_delref(us->file);
+	free(us);
     }
     TAILQ_INIT(&userspecs);
 
     binding = NULL;
     TAILQ_FOREACH_SAFE(d, &defaults, entries, d_next) {
 	if (d->binding != binding) {
-	    struct member *m, *m_next;
-
 	    binding = d->binding;
-	    TAILQ_FOREACH_SAFE(m, d->binding, entries, m_next) {
-		if (m->type == COMMAND) {
-			struct sudo_command *c =
-			    (struct sudo_command *) m->name;
-			efree(c->cmnd);
-			efree(c->args);
-		}
-		efree(m->name);
-		efree(m);
-	    }
-	    efree(d->binding);
+	    free_members(d->binding);
+	    free(d->binding);
 	}
-	efree(d->var);
-	efree(d->val);
-	efree(d);
+	rcstr_delref(d->file);
+	free(d->var);
+	free(d->val);
+	free(d);
     }
     TAILQ_INIT(&defaults);
 
-    init_aliases();
-
     init_lexer();
 
-    efree(sudoers);
-    sudoers = path ? estrdup(path) : NULL;
+    if (!init_aliases()) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	ret = false;
+    }
+
+    rcstr_delref(sudoers);
+    if (path != NULL) {
+	if ((sudoers = rcstr_dup(path)) == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    ret = false;
+	}
+    } else {
+	sudoers = NULL;
+    }
 
     parse_error = false;
     errorlineno = -1;
-    errorfile = sudoers;
+    rcstr_delref(errorfile);
+    errorfile = NULL;
     sudoers_warnings = !quiet;
 
-    debug_return;
+    debug_return_bool(ret);
 }

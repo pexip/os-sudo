@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2005, 2007-2008, 2010-2013
+ * Copyright (c) 2000-2005, 2007-2008, 2010-2015
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,25 +21,18 @@
 
 #include <config.h>
 
+#ifdef HAVE_BSD_AUTH_H
+
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRING_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <ctype.h>
 #include <pwd.h>
 #include <signal.h>
@@ -63,7 +56,7 @@ int
 bsdauth_init(struct passwd *pw, sudo_auth *auth)
 {
     static struct bsdauth_state state;
-    debug_decl(bsdauth_init, SUDO_DEBUG_AUTH)
+    debug_decl(bsdauth_init, SUDOERS_DEBUG_AUTH)
 
     /* Get login class based on auth user, which may not be invoking user. */
     if (pw->pw_class && *pw->pw_class)
@@ -71,14 +64,13 @@ bsdauth_init(struct passwd *pw, sudo_auth *auth)
     else
 	state.lc = login_getclass(pw->pw_uid ? LOGIN_DEFCLASS : LOGIN_DEFROOTCLASS);
     if (state.lc == NULL) {
-	log_warning(USE_ERRNO|NO_MAIL,
+	log_warning(0,
 	    N_("unable to get login class for user %s"), pw->pw_name);
 	debug_return_int(AUTH_FATAL);
     }
 
     if ((state.as = auth_open()) == NULL) {
-	log_warning(USE_ERRNO|NO_MAIL,
-	    N_("unable to begin bsd authentication"));
+	log_warning(0, N_("unable to begin bsd authentication"));
 	login_close(state.lc);
 	debug_return_int(AUTH_FATAL);
     }
@@ -86,7 +78,7 @@ bsdauth_init(struct passwd *pw, sudo_auth *auth)
     /* XXX - maybe sanity check the auth style earlier? */
     login_style = login_getstyle(state.lc, login_style, "auth-sudo");
     if (login_style == NULL) {
-	log_warning(NO_MAIL, N_("invalid authentication type"));
+	log_warningx(0, N_("invalid authentication type"));
 	auth_close(state.as);
 	login_close(state.lc);
 	debug_return_int(AUTH_FATAL);
@@ -95,7 +87,7 @@ bsdauth_init(struct passwd *pw, sudo_auth *auth)
      if (auth_setitem(state.as, AUTHV_STYLE, login_style) < 0 ||
 	auth_setitem(state.as, AUTHV_NAME, pw->pw_name) < 0 ||
 	auth_setitem(state.as, AUTHV_CLASS, login_class) < 0) {
-	log_warning(NO_MAIL, N_("unable to initialize BSD authentication"));
+	log_warningx(0, N_("unable to initialize BSD authentication"));
 	auth_close(state.as);
 	login_close(state.lc);
 	debug_return_int(AUTH_FATAL);
@@ -106,7 +98,7 @@ bsdauth_init(struct passwd *pw, sudo_auth *auth)
 }
 
 int
-bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
+bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth, struct sudo_conv_callback *callback)
 {
     char *pass;
     char *s;
@@ -114,7 +106,7 @@ bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
     int authok = 0;
     sigaction_t sa, osa;
     auth_session_t *as = ((struct bsdauth_state *) auth->data)->as;
-    debug_decl(bsdauth_verify, SUDO_DEBUG_AUTH)
+    debug_decl(bsdauth_verify, SUDOERS_DEBUG_AUTH)
 
     /* save old signal handler */
     sigemptyset(&sa.sa_mask);
@@ -129,9 +121,9 @@ bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
      * S/Key.
      */
     if ((s = auth_challenge(as)) == NULL) {
-	pass = auth_getpass(prompt, def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF);
+	pass = auth_getpass(prompt, def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
     } else {
-	pass = auth_getpass(prompt, def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF);
+	pass = auth_getpass(s, def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
 	if (pass && *pass == '\0') {
 	    if ((prompt = strrchr(s, '\n')))
 		prompt++;
@@ -145,9 +137,13 @@ bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
 	    len = strlen(prompt) - 1;
 	    while (isspace(prompt[len]) || prompt[len] == ':')
 		prompt[len--] = '\0';
-	    easprintf(&s, "%s [echo on]: ", prompt);
-	    pass = auth_getpass(prompt, def_passwd_timeout * 60,
-		SUDO_CONV_PROMPT_ECHO_ON);
+	    if (asprintf(&s, "%s [echo on]: ", prompt) == -1) {
+		log_warningx(0, N_("unable to allocate memory"));
+		debug_return_int(AUTH_FATAL);
+	    }
+	    free(pass);
+	    pass = auth_getpass(s, def_passwd_timeout * 60,
+		SUDO_CONV_PROMPT_ECHO_ON, callback);
 	    free(s);
 	}
     }
@@ -155,6 +151,7 @@ bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
     if (pass) {
 	authok = auth_userresponse(as, pass, 1);
 	memset_s(pass, SUDO_CONV_REPL_MAX, 0, strlen(pass));
+	free(pass);
     }
 
     /* restore old signal handler */
@@ -167,7 +164,7 @@ bsdauth_verify(struct passwd *pw, char *prompt, sudo_auth *auth)
 	debug_return_int(AUTH_INTR);
 
     if ((s = auth_getvalue(as, "errormsg")) != NULL)
-	log_warning(NO_MAIL, "%s", s);
+	log_warningx(0, "%s", s);
     debug_return_int(AUTH_FAILURE);
 }
 
@@ -175,7 +172,7 @@ int
 bsdauth_cleanup(struct passwd *pw, sudo_auth *auth)
 {
     struct bsdauth_state *state = auth->data;
-    debug_decl(bsdauth_cleanup, SUDO_DEBUG_AUTH)
+    debug_decl(bsdauth_cleanup, SUDOERS_DEBUG_AUTH)
 
     if (state != NULL) {
 	auth_close(state->as);
@@ -184,3 +181,5 @@ bsdauth_cleanup(struct passwd *pw, sudo_auth *auth)
 
     debug_return_int(AUTH_SUCCESS);
 }
+
+#endif /* HAVE_BSD_AUTH_H */

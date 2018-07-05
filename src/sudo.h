@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1993-1996, 1998-2005, 2007-2013
+ * Copyright (c) 1993-1996, 1998-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -19,8 +19,8 @@
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
  */
 
-#ifndef _SUDO_SUDO_H
-#define _SUDO_SUDO_H
+#ifndef SUDO_SUDO_H
+#define SUDO_SUDO_H
 
 #include <limits.h>
 #include <pathnames.h>
@@ -30,12 +30,10 @@
 # include "compat/stdbool.h"
 #endif /* HAVE_STDBOOL_H */
 
-#include "gettext.h"		/* must be included before missing.h */
+#include "sudo_gettext.h"	/* must be included before sudo_compat.h */
 
-#include "missing.h"
-#include "alloc.h"
-#include "fatal.h"
-#include "fileops.h"
+#include "sudo_compat.h"
+#include "sudo_fatal.h"
 #include "sudo_conf.h"
 #include "sudo_debug.h"
 #include "sudo_util.h"
@@ -86,6 +84,12 @@
 #define TGP_MASK	0x08		/* mask user input when reading */
 #define TGP_NOECHO_TRY	0x10		/* turn off echo if possible */
 
+/* name/value pairs for command line settings. */
+struct sudo_settings {
+    const char *name;
+    const char *value;
+};
+
 struct user_details {
     pid_t pid;
     pid_t ppid;
@@ -107,21 +111,25 @@ struct user_details {
     int ts_lines;
 };
 
-#define CD_SET_UID		0x0001
-#define CD_SET_EUID		0x0002
-#define CD_SET_GID		0x0004
-#define CD_SET_EGID		0x0008
-#define CD_PRESERVE_GROUPS	0x0010
-#define CD_NOEXEC		0x0020
-#define CD_SET_PRIORITY		0x0040
-#define CD_SET_UMASK		0x0080
-#define CD_SET_TIMEOUT		0x0100
-#define CD_SUDOEDIT		0x0200
-#define CD_BACKGROUND		0x0400
-#define CD_RBAC_ENABLED		0x0800
-#define CD_USE_PTY		0x1000
-#define CD_SET_UTMP		0x2000
-#define CD_EXEC_BG		0x4000
+#define CD_SET_UID		0x00001
+#define CD_SET_EUID		0x00002
+#define CD_SET_GID		0x00004
+#define CD_SET_EGID		0x00008
+#define CD_PRESERVE_GROUPS	0x00010
+#define CD_NOEXEC		0x00020
+#define CD_SET_PRIORITY		0x00040
+#define CD_SET_UMASK		0x00080
+#define CD_SET_TIMEOUT		0x00100
+#define CD_SUDOEDIT		0x00200
+#define CD_BACKGROUND		0x00400
+#define CD_RBAC_ENABLED		0x00800
+#define CD_USE_PTY		0x01000
+#define CD_SET_UTMP		0x02000
+#define CD_EXEC_BG		0x04000
+#define CD_SUDOEDIT_COPY	0x08000
+#define CD_SUDOEDIT_FOLLOW	0x10000
+#define CD_SUDOEDIT_CHECKDIR	0x20000
+#define CD_SET_GROUPS		0x40000
 
 struct preserved_fd {
     TAILQ_ENTRY(preserved_fd) entries;
@@ -142,6 +150,7 @@ struct command_details {
     int ngroups;
     int closefrom;
     int flags;
+    int execfd;
     struct preserved_fd_list preserved_fds;
     struct passwd *pw;
     GETGROUPS_T *groups;
@@ -171,14 +180,19 @@ struct command_status {
     int val;
 };
 
-struct timeval;
+/* Garbage collector data types. */
+enum sudo_gc_types {
+    GC_UNKNOWN,
+    GC_VECTOR,
+    GC_PTR
+};
 
 /* For fatal() and fatalx() (XXX - needed?) */
 void cleanup(int);
 
 /* tgetpass.c */
-char *tgetpass(const char *, int, int);
-int tty_present(void);
+char *tgetpass(const char *prompt, int timeout, int flags,
+    struct sudo_conv_callback *callback);
 
 /* exec.c */
 int pipe_nonblock(int fds[2]);
@@ -186,19 +200,21 @@ int sudo_execute(struct command_details *details, struct command_status *cstat);
 
 /* parse_args.c */
 int parse_args(int argc, char **argv, int *nargc, char ***nargv,
-    char ***settingsp, char ***env_addp);
+    struct sudo_settings **settingsp, char ***env_addp);
 extern int tgetpass_flags;
 
 /* get_pty.c */
-int get_pty(int *master, int *slave, char *name, size_t namesz, uid_t uid);
+bool get_pty(int *master, int *slave, char *name, size_t namesz, uid_t uid);
 
 /* sudo.c */
 bool exec_setup(struct command_details *details, const char *ptyname, int ptyfd);
 int policy_init_session(struct command_details *details);
 int run_command(struct command_details *details);
 int os_init_common(int argc, char *argv[], char *envp[]);
+bool gc_add(enum sudo_gc_types type, void *v);
 extern const char *list_user;
 extern struct user_details user_details;
+extern int sudo_debug_instance;
 
 /* sudo_edit.c */
 int sudo_edit(struct command_details *details);
@@ -213,8 +229,8 @@ int os_init_openbsd(int argc, char *argv[], char *envp[]);
 int selinux_restore_tty(void);
 int selinux_setup(const char *role, const char *type, const char *ttyn,
     int ttyfd);
-void selinux_execve(const char *path, char *const argv[], char *const envp[],
-    int noexec);
+void selinux_execve(int fd, const char *path, char *const argv[],
+    char *envp[], bool noexec);
 
 /* solaris.c */
 void set_project(struct passwd *);
@@ -237,7 +253,7 @@ char *getenv_unhooked(const char *name);
 int get_net_ifs(char **addrinfo);
 
 /* ttyname.c */
-char *get_process_ttyname(void);
+char *get_process_ttyname(char *name, size_t namelen);
 
 /* signal.c */
 struct sigaction;
@@ -255,4 +271,4 @@ int add_preserved_fd(struct preserved_fd_list *pfds, int fd);
 void closefrom_except(int startfd, struct preserved_fd_list *pfds);
 void parse_preserved_fds(struct preserved_fd_list *pfds, const char *fdstr);
 
-#endif /* _SUDO_SUDO_H */
+#endif /* SUDO_SUDO_H */
