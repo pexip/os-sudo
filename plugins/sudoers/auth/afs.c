@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2001-2005, 2007, 2010-2012
+ * Copyright (c) 1999, 2001-2005, 2007, 2010-2012, 2014-2015
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,25 +21,18 @@
 
 #include <config.h>
 
+#ifdef HAVE_AFS
+
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRING_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 
 #include <afs/stds.h>
@@ -49,11 +42,11 @@
 #include "sudo_auth.h"
 
 int
-sudo_afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
+sudo_afs_verify(struct passwd *pw, char *pass, sudo_auth *auth, struct sudo_conv_callback *callback)
 {
     struct ktc_encryptionKey afs_key;
     struct ktc_token afs_token;
-    debug_decl(sudo_afs_verify, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_afs_verify, SUDOERS_DEBUG_AUTH)
 
     /* Try to just check the password */
     ka_StringToKey(pass, NULL, &afs_key);
@@ -81,3 +74,5 @@ sudo_afs_verify(struct passwd *pw, char *pass, sudo_auth *auth)
 
     debug_return_int(AUTH_FAILURE);
 }
+
+#endif HAVE_AFS

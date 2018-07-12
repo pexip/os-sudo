@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005,2008,2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2005,2008,2010-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,18 +22,8 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -44,12 +34,8 @@
 #include <pwd.h>
 #include <grp.h>
 
-#include "missing.h"
+#include "sudo_compat.h"
 #include "sudo_util.h"
-
-#ifndef LINE_MAX
-# define LINE_MAX 2048
-#endif
 
 #undef GRMEM_MAX
 #define GRMEM_MAX 200
@@ -79,7 +65,7 @@ mysetgrent(void)
     if (grf == NULL) {
 	grf = fopen(grfile, "r");
 	if (grf != NULL)
-	    fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	    (void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
     } else {
 	rewind(grf);
     }
@@ -123,7 +109,7 @@ next_entry:
     if ((colon = strchr(cp = colon, ':')) == NULL)
 	goto next_entry;
     *colon++ = '\0';
-    id = atoid(cp, NULL, NULL, &errstr);
+    id = sudo_strtoid(cp, NULL, NULL, &errstr);
     if (errstr != NULL)
 	goto next_entry;
     gr.gr_gid = (gid_t)id;
@@ -131,11 +117,13 @@ next_entry:
     if (len > 0 && colon[len - 1] == '\n')
 	colon[len - 1] = '\0';
     if (*colon != '\0') {
+	char *last;
+
 	gr.gr_mem = gr_mem;
-	cp = strtok(colon, ",");
+	cp = strtok_r(colon, ",", &last);
 	for (n = 0; cp != NULL && n < GRMEM_MAX; n++) {
 	    gr.gr_mem[n] = cp;
-	    cp = strtok(NULL, ",");
+	    cp = strtok_r(NULL, ",", &last);
 	}
 	gr.gr_mem[n++] = NULL;
     } else
@@ -151,7 +139,7 @@ mygetgrnam(const char *name)
     if (grf == NULL) {
 	if ((grf = fopen(grfile, "r")) == NULL)
 	    return NULL;
-	fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	(void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
     } else {
 	rewind(grf);
     }
@@ -174,7 +162,7 @@ mygetgrgid(gid_t gid)
     if (grf == NULL) {
 	if ((grf = fopen(grfile, "r")) == NULL)
 	    return NULL;
-	fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	(void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
     } else {
 	rewind(grf);
     }

@@ -27,11 +27,11 @@ struct sudo_defs_types sudo_defs_table[] = {
 	N_("Syslog facility if syslog is being used for logging: %s"),
 	NULL,
     }, {
-	"syslog_goodpri", T_LOGPRI,
+	"syslog_goodpri", T_LOGPRI|T_BOOL,
 	N_("Syslog priority to use when user authenticates successfully: %s"),
 	NULL,
     }, {
-	"syslog_badpri", T_LOGPRI,
+	"syslog_badpri", T_LOGPRI|T_BOOL,
 	N_("Syslog priority to use when user authenticates unsuccessfully: %s"),
 	NULL,
     }, {
@@ -61,6 +61,10 @@ struct sudo_defs_types sudo_defs_table[] = {
     }, {
 	"mail_no_perms", T_FLAG,
 	N_("Send mail if the user is not allowed to run a command"),
+	NULL,
+    }, {
+	"mail_all_cmnds", T_FLAG,
+	N_("Send mail if the user tries to run a command"),
 	NULL,
     }, {
 	"tty_tickets", T_FLAG,
@@ -381,6 +385,54 @@ struct sudo_defs_types sudo_defs_table[] = {
     }, {
 	"use_netgroups", T_FLAG,
 	N_("Enable sudoers netgroup support"),
+	NULL,
+    }, {
+	"sudoedit_checkdir", T_FLAG,
+	N_("Check parent directories for writability when editing files with sudoedit"),
+	NULL,
+    }, {
+	"sudoedit_follow", T_FLAG,
+	N_("Follow symbolic links when editing files with sudoedit"),
+	NULL,
+    }, {
+	"always_query_group_plugin", T_FLAG,
+	N_("Query the group plugin for unknown system groups"),
+	NULL,
+    }, {
+	"netgroup_tuple", T_FLAG,
+	N_("Match netgroups based on the entire tuple: user, host and domain"),
+	NULL,
+    }, {
+	"ignore_audit_errors", T_FLAG,
+	N_("Allow commands to be run even if sudo cannot write to the audit log"),
+	NULL,
+    }, {
+	"ignore_iolog_errors", T_FLAG,
+	N_("Allow commands to be run even if sudo cannot write to the I/O log"),
+	NULL,
+    }, {
+	"ignore_logfile_errors", T_FLAG,
+	N_("Allow commands to be run even if sudo cannot write to the log file"),
+	NULL,
+    }, {
+	"match_group_by_gid", T_FLAG,
+	N_("Resolve groups in sudoers and match on the group ID, not the name"),
+	NULL,
+    }, {
+	"syslog_maxlen", T_UINT,
+	N_("Log entries larger than this value will be split into multiple syslog messages"),
+	NULL,
+    }, {
+	"iolog_user", T_STR|T_BOOL,
+	N_("User that will own the I/O log files: %s"),
+	NULL,
+    }, {
+	"iolog_group", T_STR|T_BOOL,
+	N_("Group that will own the I/O log files: %s"),
+	NULL,
+    }, {
+	"iolog_mode", T_MODE,
+	N_("File mode to use for the I/O log files: 0%o"),
 	NULL,
     }, {
 	NULL, 0, NULL

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,19 +16,10 @@
 
 #include <config.h>
 
+#include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -42,16 +33,22 @@
 
 #define SUDO_ERROR_WRAP 0
 
-#include "missing.h"
+#include "sudo_compat.h"
 
 extern size_t base64_decode(const char *str, unsigned char *dst, size_t dsize);
 
 __dso_public int main(int argc, char *argv[]);
 
+static char bstring1[] = { 0xea, 0xb8, 0xa2, 0x71, 0xef, 0x67, 0xc1, 0xcd, 0x0d, 0xd9, 0xa6, 0xaa, 0xa8, 0x24, 0x77, 0x2a, 0xfc, 0x6f, 0x76, 0x37, 0x1b, 0xed, 0x9e, 0x1a, 0x90, 0x5f, 0xcf, 0xbc, 0x00 };
+
 struct base64_test {
     const char *ascii;
     const char *encoded;
 } test_strings[] = {
+    {
+	bstring1,
+	"6riice9nwc0N2aaqqCR3Kvxvdjcb7Z4akF/PvA=="
+    },
     {
 	"any carnal pleasure.",
 	"YW55IGNhcm5hbCBwbGVhc3VyZS4="
@@ -77,7 +74,7 @@ struct base64_test {
 int
 main(int argc, char *argv[])
 {
-    const int ntests = (sizeof(test_strings) / sizeof(test_strings[0]));
+    const int ntests = nitems(test_strings);
     int i, errors = 0;
     unsigned char buf[32];
     size_t len;

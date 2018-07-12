@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,31 +21,19 @@
 #include <sys/wait.h>
 
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
 # include "compat/stdbool.h"
 #endif /* HAVE_STDBOOL_H */
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -54,9 +42,9 @@
 #include <stdarg.h>
 
 #include <pathnames.h>
+#include "sudo_compat.h"
 #include "sudo_plugin.h"
 #include "sudo_util.h"
-#include "missing.h"
 
 /*
  * Sample plugin module that allows any user who knows the password
@@ -81,29 +69,6 @@ static FILE *input, *output;
 static uid_t runas_uid = ROOT_UID;
 static gid_t runas_gid = -1;
 static int use_sudoedit = false;
-
-/*
- * Allocate storage for a name=value string and return it.
- */
-static char *
-fmt_string(const char *var, const char *val)
-{
-    size_t var_len = strlen(var);
-    size_t val_len = strlen(val);
-    char *cp, *str;
-
-    cp = str = malloc(var_len + 1 + val_len + 1);
-    if (str != NULL) {
-	memcpy(cp, var, var_len);
-	cp += var_len;
-	*cp++ = '=';
-	memcpy(cp, val, val_len);
-	cp += val_len;
-	*cp = '\0';
-    }
-
-    return str;
-}
 
 /*
  * Plugin policy open function.
@@ -222,7 +187,7 @@ check_passwd(void)
     msg.msg_type = SUDO_CONV_PROMPT_ECHO_OFF;
     msg.msg = "Password: ";
     memset(&repl, 0, sizeof(repl));
-    sudo_conv(1, &msg, &repl);
+    sudo_conv(1, &msg, &repl, NULL);
     if (repl.reply == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "missing password\n");
 	return false;
@@ -244,12 +209,12 @@ build_command_info(const char *command)
     command_info = calloc(32, sizeof(char *));
     if (command_info == NULL)
 	return NULL;
-    if ((command_info[i++] = fmt_string("command", command)) == NULL ||
+    if ((command_info[i++] = sudo_new_key_val("command", command)) == NULL ||
 	asprintf(&command_info[i++], "runas_euid=%ld", (long)runas_uid) == -1 ||
 	asprintf(&command_info[i++], "runas_uid=%ld", (long)runas_uid) == -1) {
 	return NULL;
     }
-    if (runas_gid != -1) {
+    if (runas_gid != (gid_t)-1) {
 	if (asprintf(&command_info[i++], "runas_gid=%ld", (long)runas_gid) == -1 ||
 	    asprintf(&command_info[i++], "runas_egid=%ld", (long)runas_gid) == -1) {
 	    return NULL;
@@ -269,7 +234,7 @@ build_command_info(const char *command)
 static char *
 find_editor(int nfiles, char * const files[], char **argv_out[])
 {
-    char *cp, **ep, **nargv, *editor, *editor_path;
+    char *cp, *last, **ep, **nargv, *editor, *editor_path;
     int ac, i, nargc, wasblank;
 
     /* Lookup EDITOR in user's environment. */
@@ -301,7 +266,7 @@ find_editor(int nfiles, char * const files[], char **argv_out[])
 	}
     }
     /* If we can't find the editor in the user's PATH, give up. */
-    cp = strtok(editor, " \t");
+    cp = strtok_r(editor, " \t", &last);
     if (cp == NULL ||
 	(editor_path = find_in_path(editor, plugin_state.envp)) == NULL) {
 	free(editor);
@@ -309,7 +274,7 @@ find_editor(int nfiles, char * const files[], char **argv_out[])
     }
     if (editor_path != editor)
 	free(editor);
-    nargv = (char **) malloc((nargc + 1 + nfiles + 1) * sizeof(char *));
+    nargv = malloc((nargc + 1 + nfiles + 1) * sizeof(char *));
     if (nargv == NULL) {
 	sudo_log(SUDO_CONV_ERROR_MSG, "unable to allocate memory\n");
 	free(editor_path);
@@ -317,7 +282,7 @@ find_editor(int nfiles, char * const files[], char **argv_out[])
     }
     for (ac = 0; cp != NULL && ac < nargc; ac++) {
 	nargv[ac] = cp;
-	cp = strtok(NULL, " \t");
+	cp = strtok_r(NULL, " \t", &last);
     }
     nargv[ac++] = "--";
     for (i = 0; i < nfiles; )
@@ -479,11 +444,25 @@ io_log_input(const char *buf, unsigned int len)
 static int
 io_log_output(const char *buf, unsigned int len)
 {
+    const char *cp, *ep;
+    bool ret = true;
+
     ignore_result(fwrite(buf, len, 1, output));
-    return true;
+    /*
+     * If we find the string "honk!" in the buffer, reject it.
+     * In practice we'd want to be able to detect the word
+     * broken across two buffers.
+     */
+    for (cp = buf, ep = buf + len; cp < ep; cp++) {
+	if (cp + 5 < ep && memcmp(cp, "honk!", 5) == 0) {
+	    ret = false;
+	    break;
+	}
+    }
+    return ret;
 }
 
-struct policy_plugin sample_policy = {
+__dso_public struct policy_plugin sample_policy = {
     SUDO_POLICY_PLUGIN,
     SUDO_API_VERSION,
     policy_open,

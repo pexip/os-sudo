@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2010-2012
+ * Copyright (c) 1996, 1998-2005, 2010-2012, 2014-2015
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -35,25 +35,18 @@
 
 #include <config.h>
 
+#ifdef HAVE_DCE
+
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRING_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 
 #include <dce/rpc.h>
@@ -66,7 +59,7 @@
 static int check_dce_status(error_status_t, char *);
 
 int
-sudo_dce_verify(struct passwd *pw, char *plain_pw, sudo_auth *auth)
+sudo_dce_verify(struct passwd *pw, char *plain_pw, sudo_auth *auth, struct sudo_conv_callback *callback)
 {
     struct passwd		temp_pw;
     sec_passwd_rec_t		password_rec;
@@ -74,7 +67,7 @@ sudo_dce_verify(struct passwd *pw, char *plain_pw, sudo_auth *auth)
     boolean32			reset_passwd;
     sec_login_auth_src_t	auth_src;
     error_status_t		status;
-    debug_decl(sudo_dce_verify, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_dce_verify, SUDOERS_DEBUG_AUTH)
 
     /*
      * Create the local context of the DCE principal necessary
@@ -106,7 +99,8 @@ sudo_dce_verify(struct passwd *pw, char *plain_pw, sudo_auth *auth)
 	     * sure that we didn't get spoofed by another DCE server.
 	     */
 	    if (!sec_login_certify_identity(login_context, &status)) {
-		(void) fprintf(stderr, "Whoa! Bogus authentication server!\n");
+		sudo_printf(SUDO_CONV_ERROR_MSG,
+		    "Whoa! Bogus authentication server!\n");
 		(void) check_dce_status(status,"sec_login_certify_identity(1):");
 		debug_return_int(AUTH_FAILURE);
 	    }
@@ -127,13 +121,13 @@ sudo_dce_verify(struct passwd *pw, char *plain_pw, sudo_auth *auth)
 	     * DCE client and DCE security server...
 	     */
 	    if (auth_src != sec_login_auth_src_network) {
-		    (void) fprintf(stderr,
+		    sudo_printf(SUDO_CONV_ERROR_MSG,
 			"You have no network credentials.\n");
 		    debug_return_int(AUTH_FAILURE);
 	    }
 	    /* Check if the password has aged and is thus no good */
 	    if (reset_passwd) {
-		    (void) fprintf(stderr,
+		    sudo_printf(SUDO_CONV_ERROR_MSG,
 			"Your DCE password needs resetting.\n");
 		    debug_return_int(AUTH_FAILURE);
 	    }
@@ -188,11 +182,13 @@ check_dce_status(error_status_t input_status, char *comment)
 {
     int error_stat;
     unsigned char error_string[dce_c_error_string_len];
-    debug_decl(check_dce_status, SUDO_DEBUG_AUTH)
+    debug_decl(check_dce_status, SUDOERS_DEBUG_AUTH)
 
     if (input_status == rpc_s_ok)
-	debug_return_bool(0);
+	debug_return_int(0);
     dce_error_inq_text(input_status, error_string, &error_stat);
-    (void) fprintf(stderr, "%s %s\n", comment, error_string);
-    debug_return_bool(1);
+    sudo_printf(SUDO_CONV_ERROR_MSG, "%s %s\n", comment, error_string);
+    debug_return_int(1);
 }
+
+#endif /* HAVE_DCE */

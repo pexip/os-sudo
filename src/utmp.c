@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,26 +20,14 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #ifdef TIME_WITH_SYS_TIME
 # include <time.h>
 #endif
@@ -98,6 +86,7 @@ utmp_setid(sudo_utmp_t *old, sudo_utmp_t *new)
 
     /* Skip over "tty" in the id if old entry did too. */
     if (old != NULL) {
+	/* cppcheck-suppress uninitdata */
 	if (strncmp(line, "tty", 3) == 0) {
 	    idlen = MIN(sizeof(old->ut_id), 3);
 	    if (strncmp(old->ut_id, "tty", idlen) != 0)
@@ -106,6 +95,7 @@ utmp_setid(sudo_utmp_t *old, sudo_utmp_t *new)
     }
     
     /* Store as much as will fit, skipping parts of the beginning as needed. */
+    /* cppcheck-suppress uninitdata */
     idlen = strlen(line);
     if (idlen > sizeof(new->ut_id)) {
 	line += idlen - sizeof(new->ut_id);
@@ -126,14 +116,14 @@ utmp_settime(sudo_utmp_t *ut)
     struct timeval tv;
     debug_decl(utmp_settime, SUDO_DEBUG_UTMP)
 
-    gettimeofday(&tv, NULL);
-
+    if (gettimeofday(&tv, NULL) == 0) {
 #if defined(HAVE_STRUCT_UTMP_UT_TV) || defined(HAVE_STRUCT_UTMPX_UT_TV)
-    ut->ut_tv.tv_sec = tv.tv_sec;
-    ut->ut_tv.tv_usec = tv.tv_usec;
+	ut->ut_tv.tv_sec = tv.tv_sec;
+	ut->ut_tv.tv_usec = tv.tv_usec;
 #else
-    ut->ut_time = tv.tv_sec;
+	ut->ut_time = tv.tv_sec;
 #endif
+    }
 
     debug_return;
 }
@@ -186,7 +176,7 @@ utmp_login(const char *from_line, const char *to_line, int ttyfd,
     const char *user)
 {
     sudo_utmp_t utbuf, *ut_old = NULL;
-    bool rval = false;
+    bool ret = false;
     debug_decl(utmp_login, SUDO_DEBUG_UTMP)
 
     /* Strip off /dev/ prefix from line as needed. */
@@ -204,16 +194,16 @@ utmp_login(const char *from_line, const char *to_line, int ttyfd,
     }
     utmp_fill(to_line, user, ut_old, &utbuf);
     if (pututxline(&utbuf) != NULL)
-	rval = true;
+	ret = true;
     endutxent();
 
-    debug_return_bool(rval);
+    debug_return_bool(ret);
 }
 
 bool
 utmp_logout(const char *line, int status)
 {
-    bool rval = false;
+    bool ret = false;
     sudo_utmp_t *ut, utbuf;
     debug_decl(utmp_logout, SUDO_DEBUG_UTMP)
 
@@ -234,9 +224,9 @@ utmp_logout(const char *line, int status)
 # endif
 	utmp_settime(ut);
 	if (pututxline(ut) != NULL)
-	    rval = true;
+	    ret = true;
     }
-    debug_return_bool(rval);
+    debug_return_bool(ret);
 }
 
 #else /* !HAVE_GETUTXID && !HAVE_GETUTID */
@@ -275,12 +265,12 @@ utmp_slot(const char *line, int ttyfd)
      * doesn't take an argument.
      */
     if ((sfd = dup(STDIN_FILENO)) == -1)
-	fatal(U_("unable to save stdin"));
+	sudo_fatal(U_("unable to save stdin"));
     if (dup2(ttyfd, STDIN_FILENO) == -1)
-	fatal(U_("unable to dup2 stdin"));
+	sudo_fatal(U_("unable to dup2 stdin"));
     slot = ttyslot();
     if (dup2(sfd, STDIN_FILENO) == -1)
-	fatal(U_("unable to restore stdin"));
+	sudo_fatal(U_("unable to restore stdin"));
     close(sfd);
 
     debug_return_int(slot);
@@ -292,7 +282,7 @@ utmp_login(const char *from_line, const char *to_line, int ttyfd,
     const char *user)
 {
     sudo_utmp_t utbuf, *ut_old = NULL;
-    bool rval = false;
+    bool ret = false;
     int slot;
     FILE *fp;
     debug_decl(utmp_login, SUDO_DEBUG_UTMP)
@@ -333,24 +323,24 @@ utmp_login(const char *from_line, const char *to_line, int ttyfd,
     if (fseek(fp, slot * (long)sizeof(utbuf), SEEK_SET) == 0) {
 #endif
 	if (fwrite(&utbuf, sizeof(utbuf), 1, fp) == 1)
-	    rval = true;
+	    ret = true;
     }
     fclose(fp);
 
 done:
-    debug_return_bool(rval);
+    debug_return_bool(ret);
 }
 
 bool
 utmp_logout(const char *line, int status)
 {
     sudo_utmp_t utbuf;
-    bool rval = false;
+    bool ret = false;
     FILE *fp;
     debug_decl(utmp_logout, SUDO_DEBUG_UTMP)
 
     if ((fp = fopen(_PATH_UTMP, "r+")) == NULL)
-	debug_return_int(rval);
+	debug_return_int(ret);
 
     /* Strip off /dev/ prefix from line as needed. */
     if (strncmp(line, _PATH_DEV, sizeof(_PATH_DEV) - 1) == 0)
@@ -370,13 +360,13 @@ utmp_logout(const char *line, int status)
 	    if (fseek(fp, 0L - (long)sizeof(utbuf), SEEK_CUR) == 0) {
 #endif
 		if (fwrite(&utbuf, sizeof(utbuf), 1, fp) == 1)
-		    rval = true;
+		    ret = true;
 	    }
 	    break;
 	}
     }
     fclose(fp);
 
-    debug_return_bool(rval);
+    debug_return_bool(ret);
 }
 #endif /* HAVE_GETUTXID || HAVE_GETUTID */

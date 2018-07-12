@@ -15,8 +15,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef _SUDOERS_INSULTS_H
-#define _SUDOERS_INSULTS_H
+#ifndef SUDOERS_INSULTS_H
+#define SUDOERS_INSULTS_H
 
 #if defined(HAL_INSULTS) || defined(GOONS_INSULTS) || defined(CLASSIC_INSULTS) || defined(CSOPS_INSULTS)
 
@@ -42,14 +42,14 @@ char *insults[] = {
 #  include "ins_csops.h"
 # endif
 
-    (char *) 0
+    NULL
 
 };
 
 /*
  * How may I insult you?  Let me count the ways...
  */
-#define NOFINSULTS (sizeof(insults) / sizeof(insults[0]) - 1)
+#define NOFINSULTS (nitems(insults) - 1)
 
 /*
  * return a pseudo-random insult.
@@ -58,4 +58,4 @@ char *insults[] = {
 
 #endif /* HAL_INSULTS || GOONS_INSULTS || CLASSIC_INSULTS || CSOPS_INSULTS */
 
-#endif /* _SUDOERS_INSULTS_H */
+#endif /* SUDOERS_INSULTS_H */

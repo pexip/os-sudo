@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2009-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,89 +23,53 @@
 #include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #ifdef TIME_WITH_SYS_TIME
 # include <time.h>
-#endif
-#ifndef HAVE_STRUCT_TIMESPEC
-# include "compat/timespec.h"
 #endif
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <fcntl.h>
-#ifdef HAVE_DIRENT_H
-# include <dirent.h>
-# define NAMLEN(dirent) strlen((dirent)->d_name)
-#else
-# define dirent direct
-# define NAMLEN(dirent) (dirent)->d_namlen
-# ifdef HAVE_SYS_NDIR_H
-#  include <sys/ndir.h>
-# endif
-# ifdef HAVE_SYS_DIR_H
-#  include <sys/dir.h>
-# endif
-# ifdef HAVE_NDIR_H
-#  include <ndir.h>
-# endif
-#endif
-#ifdef HAVE_REGCOMP
-# include <regex.h>
-#endif
-#ifdef HAVE_ZLIB_H
-# include <zlib.h>
-#endif
-#include <signal.h>
+#include <dirent.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
 # include "compat/stdbool.h"
 #endif /* HAVE_STDBOOL_H */
-#ifdef HAVE_GETOPT_LONG
-# include <getopt.h>
-# else
-# include "compat/getopt.h"
-#endif /* HAVE_GETOPT_LONG */
+#include <regex.h>
+#include <signal.h>
+#ifdef HAVE_ZLIB_H
+# include <zlib.h>
+#endif
 
 #include <pathnames.h>
 
-#include "gettext.h"		/* must be included before missing.h */
+#include "sudo_gettext.h"	/* must be included before sudo_compat.h */
 
-#include "missing.h"
-#include "alloc.h"
-#include "fatal.h"
+#include "sudo_compat.h"
+#include "sudo_fatal.h"
 #include "logging.h"
 #include "iolog.h"
-#include "queue.h"
+#include "sudo_queue.h"
 #include "sudo_plugin.h"
 #include "sudo_conf.h"
 #include "sudo_debug.h"
 #include "sudo_event.h"
 #include "sudo_util.h"
 
-#ifndef LINE_MAX
-# define LINE_MAX 2048
-#endif
+#ifdef HAVE_GETOPT_LONG
+# include <getopt.h>
+# else
+# include "compat/getopt.h"
+#endif /* HAVE_GETOPT_LONG */
 
 /*
  * Info present in the I/O log file
@@ -150,11 +114,7 @@ struct search_node {
     bool negated;
     bool or;
     union {
-#ifdef HAVE_REGCOMP
 	regex_t cmdre;
-#else
-	char *pattern;
-#endif
 	time_t tstamp;
 	char *cwd;
 	char *tty;
@@ -204,12 +164,6 @@ static void sudoreplay_handler(int);
 static void usage(int);
 static void write_output(int fd, int what, void *v);
 
-#ifdef HAVE_REGCOMP
-# define REGEX_T	regex_t
-#else
-# define REGEX_T	char
-#endif
-
 #define VALID_ID(s) (isalnum((unsigned char)(s)[0]) && \
     isalnum((unsigned char)(s)[1]) && isalnum((unsigned char)(s)[2]) && \
     isalnum((unsigned char)(s)[3]) && isalnum((unsigned char)(s)[4]) && \
@@ -240,7 +194,7 @@ main(int argc, char *argv[])
 #if defined(SUDO_DEVEL) && defined(__OpenBSD__)
     {
 	extern char *malloc_options;
-	malloc_options = "AFGJPR";
+	malloc_options = "S";
     }  
 #endif
 
@@ -251,10 +205,13 @@ main(int argc, char *argv[])
     textdomain("sudoers");
 
     /* Register fatal/fatalx callback. */
-    fatal_callback_register(sudoreplay_cleanup);
+    sudo_fatal_callback_register(sudoreplay_cleanup);
 
-    /* Read sudo.conf. */
-    sudo_conf_read(NULL);
+    /* Read sudo.conf and initialize the debug subsystem. */
+    if (sudo_conf_read(NULL, SUDO_CONF_DEBUG) == -1)
+	exit(EXIT_FAILURE);
+    sudo_debug_register(getprogname(), NULL, NULL,
+	sudo_conf_debug_files(getprogname()));
 
     while ((ch = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) {
 	switch (ch) {
@@ -264,15 +221,19 @@ main(int argc, char *argv[])
 	case 'f':
 	    /* Set the replay filter. */
 	    def_filter = false;
-	    for (cp = strtok(optarg, ","); cp; cp = strtok(NULL, ",")) {
-		if (strcmp(cp, "stdout") == 0)
+	    for (cp = strtok_r(optarg, ",", &ep); cp; cp = strtok_r(NULL, ",", &ep)) {
+		if (strcmp(cp, "stdin") == 0)
+		    io_log_files[IOFD_STDIN].enabled = true;
+		else if (strcmp(cp, "stdout") == 0)
 		    io_log_files[IOFD_STDOUT].enabled = true;
 		else if (strcmp(cp, "stderr") == 0)
 		    io_log_files[IOFD_STDERR].enabled = true;
+		else if (strcmp(cp, "ttyin") == 0)
+		    io_log_files[IOFD_TTYIN].enabled = true;
 		else if (strcmp(cp, "ttyout") == 0)
 		    io_log_files[IOFD_TTYOUT].enabled = true;
 		else
-		    fatalx(U_("invalid filter option: %s"), optarg);
+		    sudo_fatalx(U_("invalid filter option: %s"), optarg);
 	    }
 	    break;
 	case 'h':
@@ -285,13 +246,13 @@ main(int argc, char *argv[])
 	    errno = 0;
 	    max_wait = strtod(optarg, &ep);
 	    if (*ep != '\0' || errno != 0)
-		fatalx(U_("invalid max wait: %s"), optarg);
+		sudo_fatalx(U_("invalid max wait: %s"), optarg);
 	    break;
 	case 's':
 	    errno = 0;
 	    speed_factor = strtod(optarg, &ep);
 	    if (*ep != '\0' || errno != 0)
-		fatalx(U_("invalid speed factor: %s"), optarg);
+		sudo_fatalx(U_("invalid speed factor: %s"), optarg);
 	    break;
 	case 'V':
 	    (void) printf(_("%s version %s\n"), getprogname(), PACKAGE_VERSION);
@@ -326,13 +287,13 @@ main(int argc, char *argv[])
 	plen = snprintf(path, sizeof(path), "%s/%.2s/%.2s/%.2s/timing",
 	    session_dir, id, &id[2], &id[4]);
 	if (plen <= 0 || (size_t)plen >= sizeof(path))
-	    fatalx(U_("%s/%.2s/%.2s/%.2s/timing: %s"), session_dir,
+	    sudo_fatalx(U_("%s/%.2s/%.2s/%.2s/timing: %s"), session_dir,
 		id, &id[2], &id[4], strerror(ENAMETOOLONG));
     } else {
 	plen = snprintf(path, sizeof(path), "%s/%s/timing",
 	    session_dir, id);
 	if (plen <= 0 || (size_t)plen >= sizeof(path))
-	    fatalx(U_("%s/%s/timing: %s"), session_dir,
+	    sudo_fatalx(U_("%s/%s/timing: %s"), session_dir,
 		id, strerror(ENAMETOOLONG));
     }
     plen -= 7;
@@ -340,7 +301,7 @@ main(int argc, char *argv[])
     /* Open files for replay, applying replay filter for the -f flag. */
     for (idx = 0; idx < IOFD_MAX; idx++) {
 	if (open_io_fd(path, plen, &io_log_files[idx]) == -1) 
-	    fatal(U_("unable to open %s"), path);
+	    sudo_fatal(U_("unable to open %s"), path);
     }
 
     /* Parse log file. */
@@ -351,7 +312,7 @@ main(int argc, char *argv[])
     printf(_("Replaying sudo session: %s\n"), li->cmd);
 
     /* Make sure the terminal is large enough. */
-    get_ttysize(&rows, &cols);
+    sudo_get_ttysize(&rows, &cols);
     if (li->rows != 0 && li->cols != 0) {
 	if (li->rows > rows) {
 	    printf(_("Warning: your terminal is too small to properly replay the log.\n"));
@@ -366,10 +327,48 @@ main(int argc, char *argv[])
     /* Replay session corresponding to io_log_files[]. */
     replay_session(max_wait, decimal);
 
-    term_restore(STDIN_FILENO, 1);
+    sudo_term_restore(STDIN_FILENO, true);
 done:
     sudo_debug_exit_int(__func__, __FILE__, __LINE__, sudo_debug_subsys, exitcode);
     exit(exitcode);
+}
+
+/*
+ * Call gzread() or fread() for the I/O log file in question.
+ * Return 0 for EOF or -1 on error.
+ */
+static ssize_t
+io_log_read(int idx, char *buf, size_t nbytes)
+{
+    ssize_t nread;
+    debug_decl(io_log_read, SUDO_DEBUG_UTIL)
+
+    if (nbytes > INT_MAX) {
+	errno = EINVAL;
+	debug_return_ssize_t(-1);
+    }
+#ifdef HAVE_ZLIB_H
+    nread = gzread(io_log_files[idx].fd.g, buf, nbytes);
+#else
+    nread = (ssize_t)fread(buf, 1, nbytes, io_log_files[idx].fd.f);
+    if (nread == 0 && ferror(io_log_files[idx].fd.f))
+	nread = -1;
+#endif
+    debug_return_ssize_t(nread);
+}
+
+static char *
+io_log_gets(int idx, char *buf, size_t nbytes)
+{
+    char *str;
+    debug_decl(io_log_gets, SUDO_DEBUG_UTIL)
+
+#ifdef HAVE_ZLIB_H
+    str = gzgets(io_log_files[idx].fd.g, buf, nbytes);
+#else
+    str = fgets(buf, nbytes, io_log_files[idx].fd.f);
+#endif
+    debug_return_str(str);
 }
 
 static void
@@ -406,33 +405,29 @@ replay_session(const double max_wait, const char *decimal)
     /* Set stdin to raw mode if it is a tty */
     interactive = isatty(STDIN_FILENO);
     if (interactive) {
-	idx = fcntl(STDIN_FILENO, F_GETFL, 0);
-	if (idx != -1)
-	    (void) fcntl(STDIN_FILENO, F_SETFL, idx | O_NONBLOCK);
-	if (!term_raw(STDIN_FILENO, 1))
-	    fatal(U_("unable to set tty to raw mode"));
+	while (!sudo_term_raw(STDIN_FILENO, 1)) {
+	    if (errno != EINTR)
+		sudo_fatal(U_("unable to set tty to raw mode"));
+	    kill(getpid(), SIGTTOU);
+	}
     }
 
     /* Setup event base and input/output events. */
     evbase = sudo_ev_base_alloc();
     if (evbase == NULL)
-	fatal(NULL);
+	sudo_fatal(NULL);
     input_ev = sudo_ev_alloc(STDIN_FILENO, interactive ? SUDO_EV_READ :
 	SUDO_EV_TIMEOUT, check_input, sudo_ev_self_cbarg());
     if (input_ev == NULL)
-        fatal(NULL);
+        sudo_fatal(NULL);
     output_ev = sudo_ev_alloc(STDIN_FILENO, SUDO_EV_WRITE, write_output, &wc);
     if (output_ev == NULL)
-        fatal(NULL);
+        sudo_fatal(NULL);
 
     /*
      * Read each line of the timing file, displaying the output streams.
      */
-#ifdef HAVE_ZLIB_H
-    while (gzgets(io_log_files[IOFD_TIMING].fd.g, buf, sizeof(buf)) != NULL) {
-#else
-    while (fgets(buf, sizeof(buf), io_log_files[IOFD_TIMING].fd.f) != NULL) {
-#endif
+    while (io_log_gets(IOFD_TIMING, buf, sizeof(buf)) != NULL) {
 	size_t len, nbytes, nread;
 	double seconds, to_wait;
 	struct timeval timeout;
@@ -441,7 +436,7 @@ replay_session(const double max_wait, const char *decimal)
 
 	buf[strcspn(buf, "\n")] = '\0';
 	if (!parse_timing(buf, decimal, &idx, &seconds, &nbytes))
-	    fatalx(U_("invalid timing file line: %s"), buf);
+	    sudo_fatalx(U_("invalid timing file line: %s"), buf);
 
 	/* Adjust delay using speed factor and clamp to max_wait */
 	to_wait = seconds / speed_factor;
@@ -457,7 +452,7 @@ replay_session(const double max_wait, const char *decimal)
 	sudo_ev_loop(evbase, 0);
 
 	/* Even if we are not replaying, we still have to delay. */
-	if (io_log_files[idx].fd.v == NULL)
+	if (idx >= IOFD_MAX || io_log_files[idx].fd.v == NULL)
 	    continue;
 
 	/* Check whether we need to convert newline to CR LF pairs. */
@@ -471,57 +466,73 @@ replay_session(const double max_wait, const char *decimal)
 		len = sizeof(buf);
 	    else
 		len = nbytes;
-#ifdef HAVE_ZLIB_H
-	    nread = gzread(io_log_files[idx].fd.g, buf, len);
-#else
-	    nread = fread(buf, 1, len, io_log_files[idx].fd.f);
-#endif
+	    nread = io_log_read(idx, buf, len);
+	    if (nread <= 0) {
+		if (nread == 0) {
+		    sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+			"%s: premature EOF, expected %zu bytes",
+			io_log_files[idx].suffix, nbytes);
+		} else {
+		    sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_ERRNO|SUDO_DEBUG_LINENO,
+			"%s: read error", io_log_files[idx].suffix);
+		}
+		break;
+	    }
 	    nbytes -= nread;
 
 	    /* Convert newline to carriage return + linefeed if needed. */
 	    if (need_nlcr) {
 		size_t remainder = nread;
 		size_t linelen;
-		char *cp = buf;
-		char *ep = buf - 1;
+		char *line = buf;
+		char *nl, *cp = buf;
 
-		/* Handle a "\r\n" pair that spans a buffer. */
-		if (last_char == '\r' && buf[0] == '\n') {
-		    ep++;
+		/*
+		 * Handle a "\r\n" pair that spans a buffer.
+		 * The newline will be written as part of the next line.
+		 */
+		if (last_char == '\r' && *cp == '\n') {
+		    cp++;
 		    remainder--;
 		}
 
 		iovcnt = 0;
-		while ((ep = memchr(ep + 1, '\n', remainder)) != NULL) {
-		    /* Is there already a carriage return? */
-		    if (cp != ep && ep[-1] == '\r') {
-			remainder = (size_t)(&buf[nread - 1] - ep);
+		while ((nl = memchr(cp, '\n', remainder)) != NULL) {
+		    /*
+		     * If there is already a carriage return, keep going.
+		     * We'll include it as part of the next line written.
+		     */
+		    if (cp != nl && nl[-1] == '\r') {
+			remainder = (size_t)(&buf[nread - 1] - nl);
+			cp = nl + 1;
 		    	continue;
 		    }
 
 		    /* Store the line in iov followed by \r\n pair. */
 		    if (iovcnt + 3 > iovmax) {
 			iov = iovmax ?
-			    erealloc3(iov, iovmax <<= 1, sizeof(*iov)) :
-			    emalloc2(iovmax = 32, sizeof(*iov));
+			    reallocarray(iov, iovmax <<= 1, sizeof(*iov)) :
+			    reallocarray(NULL, iovmax = 32, sizeof(*iov));
+			if (iov == NULL)
+			    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 		    }
-		    linelen = (size_t)(ep - cp) + 1;
-		    iov[iovcnt].iov_base = cp;
+		    linelen = (size_t)(nl - line) + 1;
+		    iov[iovcnt].iov_base = line;
 		    iov[iovcnt].iov_len = linelen - 1; /* not including \n */
 		    iovcnt++;
 		    iov[iovcnt].iov_base = "\r\n";
 		    iov[iovcnt].iov_len = 2;
 		    iovcnt++;
-		    cp = ep + 1;
+		    line = cp = nl + 1;
 		    remainder -= linelen;
 		}
-		if ((size_t)(cp - buf) != nread) {
+		if ((size_t)(line - buf) != nread) {
 		    /*
 		     * Partial line without a linefeed or multiple lines
-		     * with \r\n pairs.
+		     * that already had \r\n pairs.
 		     */
-		    iov[iovcnt].iov_base = cp;
-		    iov[iovcnt].iov_len = nread - (cp - buf);
+		    iov[iovcnt].iov_base = line;
+		    iov[iovcnt].iov_len = nread - (line - buf);
 		    iovcnt++;
 		}
 		last_char = buf[nread - 1]; /* stash last char of old buffer */
@@ -546,6 +557,11 @@ replay_session(const double max_wait, const char *decimal)
 	    sudo_ev_loop(evbase, 0);
 	}
     }
+    if (iov != &iovb)
+	free(iov);
+    sudo_ev_base_free(evbase);
+    sudo_ev_free(input_ev);
+    sudo_ev_free(output_ev);
     debug_return;
 }
 
@@ -571,44 +587,37 @@ static void
 write_output(int fd, int what, void *v)
 {
     struct write_closure *wc = v;
-    ssize_t nwritten;
-    size_t count, remainder;
+    size_t nwritten;
     unsigned int i;
     debug_decl(write_output, SUDO_DEBUG_UTIL)
 
     nwritten = writev(STDOUT_FILENO, wc->iov, wc->iovcnt);
-    switch (nwritten) {
+    switch ((ssize_t)nwritten) {
     case -1:
 	if (errno != EINTR && errno != EAGAIN)
-	    fatal(U_("unable to write to %s"), "stdout");
+	    sudo_fatal(U_("unable to write to %s"), "stdout");
 	break;
     case 0:
 	break;
     default:
-	remainder = wc->nbytes - nwritten;
-	if (remainder == 0) {
+	if (wc->nbytes == nwritten) {
 	    /* writev completed */
 	    debug_return;
 	}
 
 	/* short writev, adjust iov so we can write the remainder. */
-	count = 0;
+	wc->nbytes -= nwritten;
 	i = wc->iovcnt;
 	while (i--) {
-	    count += wc->iov[i].iov_len;
-	    if (count == remainder) {
-		wc->iov += i;
-		wc->iovcnt -= i;
+	    if (wc->iov[0].iov_len > nwritten) {
+		/* Partial write, adjust base and len and reschedule. */
+		wc->iov[0].iov_base = (char *)wc->iov[0].iov_base + nwritten;
+		wc->iov[0].iov_len -= nwritten;
 		break;
 	    }
-	    if (count > remainder) {
-		size_t off = (count - remainder);
-		wc->iov[i].iov_base = (char *)wc->iov[i].iov_base + off;
-		wc->iov[i].iov_len -= off;
-		wc->iov += i;
-		wc->iovcnt -= i;
-		break;
-	    }
+	    nwritten -= wc->iov[0].iov_len;
+	    wc->iov++;
+	    wc->iovcnt--;
 	}
 	break;
     }
@@ -645,9 +654,9 @@ parse_expr(struct search_node_list *head, char *argv[], bool sub_expr)
 		goto bad;
 	    not = true;
 	    continue;
-	case 'c': /* command */
+	case 'c': /* cwd or command */
 	    if (av[0][1] == '\0')
-		fatalx(U_("ambiguous expression \"%s\""), *av);
+		sudo_fatalx(U_("ambiguous expression \"%s\""), *av);
 	    if (strncmp(*av, "cwd", strlen(*av)) == 0)
 		type = ST_CWD;
 	    else if (strncmp(*av, "command", strlen(*av)) == 0)
@@ -672,7 +681,7 @@ parse_expr(struct search_node_list *head, char *argv[], bool sub_expr)
 	    break;
 	case 't': /* tty or to date */
 	    if (av[0][1] == '\0')
-		fatalx(U_("ambiguous expression \"%s\""), *av);
+		sudo_fatalx(U_("ambiguous expression \"%s\""), *av);
 	    if (strncmp(*av, "todate", strlen(*av)) == 0)
 		type = ST_TODATE;
 	    else if (strncmp(*av, "tty", strlen(*av)) == 0)
@@ -694,16 +703,17 @@ parse_expr(struct search_node_list *head, char *argv[], bool sub_expr)
 	    if (av[0][1] != '\0')
 		goto bad;
 	    if (!sub_expr)
-		fatalx(U_("unmatched ')' in expression"));
+		sudo_fatalx(U_("unmatched ')' in expression"));
 	    debug_return_int(av - argv + 1);
-	bad:
 	default:
-	    fatalx(U_("unknown search term \"%s\""), *av);
+	bad:
+	    sudo_fatalx(U_("unknown search term \"%s\""), *av);
 	    /* NOTREACHED */
 	}
 
 	/* Allocate new search node */
-	sn = ecalloc(1, sizeof(*sn));
+	if ((sn = calloc(1, sizeof(*sn))) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	sn->type = type;
 	sn->or = or;
 	sn->negated = not;
@@ -712,17 +722,14 @@ parse_expr(struct search_node_list *head, char *argv[], bool sub_expr)
 	    av += parse_expr(&sn->u.expr, av + 1, true);
 	} else {
 	    if (*(++av) == NULL)
-		fatalx(U_("%s requires an argument"), av[-1]);
-#ifdef HAVE_REGCOMP
+		sudo_fatalx(U_("%s requires an argument"), av[-1]);
 	    if (type == ST_PATTERN) {
 		if (regcomp(&sn->u.cmdre, *av, REG_EXTENDED|REG_NOSUB) != 0)
-		    fatalx(U_("invalid regular expression: %s"), *av);
-	    } else
-#endif
-	    if (type == ST_TODATE || type == ST_FROMDATE) {
+		    sudo_fatalx(U_("invalid regular expression: %s"), *av);
+	    } else if (type == ST_TODATE || type == ST_FROMDATE) {
 		sn->u.tstamp = get_date(*av);
 		if (sn->u.tstamp == -1)
-		    fatalx(U_("could not parse date \"%s\""), *av);
+		    sudo_fatalx(U_("could not parse date \"%s\""), *av);
 	    } else {
 		sn->u.ptr = *av;
 	    }
@@ -731,11 +738,11 @@ parse_expr(struct search_node_list *head, char *argv[], bool sub_expr)
 	STAILQ_INSERT_TAIL(head, sn, entries);
     }
     if (sub_expr)
-	fatalx(U_("unmatched '(' in expression"));
+	sudo_fatalx(U_("unmatched '(' in expression"));
     if (or)
-	fatalx(U_("illegal trailing \"or\""));
+	sudo_fatalx(U_("illegal trailing \"or\""));
     if (not)
-	fatalx(U_("illegal trailing \"!\""));
+	sudo_fatalx(U_("illegal trailing \"!\""));
 
     debug_return_int(av - argv);
 }
@@ -769,17 +776,13 @@ match_expr(struct search_node_list *head, struct log_info *log, bool last_match)
 	    res = strcmp(sn->u.user, log->user) == 0;
 	    break;
 	case ST_PATTERN:
-#ifdef HAVE_REGCOMP
 	    rc = regexec(&sn->u.cmdre, log->cmd, 0, NULL, 0);
 	    if (rc && rc != REG_NOMATCH) {
 		char buf[BUFSIZ];
 		regerror(rc, &sn->u.cmdre, buf, sizeof(buf));
-		fatalx("%s", buf);
+		sudo_fatalx("%s", buf);
 	    }
 	    res = rc == REG_NOMATCH ? 0 : 1;
-#else
-	    res = strstr(log.cmd, sn->u.pattern) != NULL;
-#endif
 	    break;
 	case ST_FROMDATE:
 	    res = log->tstamp >= sn->u.tstamp;
@@ -788,7 +791,7 @@ match_expr(struct search_node_list *head, struct log_info *log, bool last_match)
 	    res = log->tstamp <= sn->u.tstamp;
 	    break;
 	default:
-	    fatalx(U_("unknown search type %d"), sn->type);
+	    sudo_fatalx(U_("unknown search type %d"), sn->type);
 	    /* NOTREACHED */
 	}
 	if (sn->negated)
@@ -811,7 +814,7 @@ parse_logfile(char *logfile)
 
     fp = fopen(logfile, "r");
     if (fp == NULL) {
-	warning(U_("unable to open %s"), logfile);
+	sudo_warn(U_("unable to open %s"), logfile);
 	goto bad;
     }
 
@@ -821,11 +824,12 @@ parse_logfile(char *logfile)
      *  2) cwd
      *  3) command with args
      */
-    li = ecalloc(1, sizeof(*li));
+    if ((li = calloc(1, sizeof(*li))) == NULL)
+	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (getline(&buf, &bufsize, fp) == -1 ||
 	getline(&li->cwd, &cwdsize, fp) == -1 ||
 	getline(&li->cmd, &cmdsize, fp) == -1) {
-	warning(U_("%s: invalid log file"), logfile);
+	sudo_warn(U_("%s: invalid log file"), logfile);
 	goto bad;
     }
 
@@ -843,50 +847,56 @@ parse_logfile(char *logfile)
 
     /* timestamp */
     if ((ep = strchr(cp, ':')) == NULL) {
-	warning(U_("%s: time stamp field is missing"), logfile);
+	sudo_warn(U_("%s: time stamp field is missing"), logfile);
 	goto bad;
     }
     *ep = '\0';
     li->tstamp = sizeof(time_t) == 4 ? strtonum(cp, INT_MIN, INT_MAX, &errstr) :
 	strtonum(cp, LLONG_MIN, LLONG_MAX, &errstr);
     if (errstr != NULL) {
-	warning(U_("%s: time stamp %s: %s"), logfile, cp, errstr);
+	sudo_warn(U_("%s: time stamp %s: %s"), logfile, cp, errstr);
 	goto bad;
     }
 
     /* user */
     cp = ep + 1;
     if ((ep = strchr(cp, ':')) == NULL) {
-	warning(U_("%s: user field is missing"), logfile);
+	sudo_warn(U_("%s: user field is missing"), logfile);
 	goto bad;
     }
-    li->user = estrndup(cp, (size_t)(ep - cp));
+    if ((li->user = strndup(cp, (size_t)(ep - cp))) == NULL)
+	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 
     /* runas user */
     cp = ep + 1;
     if ((ep = strchr(cp, ':')) == NULL) {
-	warning(U_("%s: runas user field is missing"), logfile);
+	sudo_warn(U_("%s: runas user field is missing"), logfile);
 	goto bad;
     }
-    li->runas_user = estrndup(cp, (size_t)(ep - cp));
+    if ((li->runas_user = strndup(cp, (size_t)(ep - cp))) == NULL)
+	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 
     /* runas group */
     cp = ep + 1;
     if ((ep = strchr(cp, ':')) == NULL) {
-	warning(U_("%s: runas group field is missing"), logfile);
+	sudo_warn(U_("%s: runas group field is missing"), logfile);
 	goto bad;
     }
-    if (cp != ep)
-	li->runas_group = estrndup(cp, (size_t)(ep - cp));
+    if (cp != ep) {
+	if ((li->runas_group = strndup(cp, (size_t)(ep - cp))) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+    }
 
     /* tty, followed by optional rows + columns */
     cp = ep + 1;
     if ((ep = strchr(cp, ':')) == NULL) {
 	/* just the tty */
-	li->tty = estrdup(cp);
+	if ((li->tty = strdup(cp)) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     } else {
 	/* tty followed by rows + columns */
-	li->tty = estrndup(cp, (size_t)(ep - cp));
+	if ((li->tty = strndup(cp, (size_t)(ep - cp))) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	cp = ep + 1;
 	/* need to NULL out separator to use strtonum() */
 	if ((ep = strchr(cp, ':')) != NULL) {
@@ -907,13 +917,13 @@ parse_logfile(char *logfile)
 	}
     }
     fclose(fp);
-    efree(buf);
+    free(buf);
     debug_return_ptr(li);
 
 bad:
     if (fp != NULL)
 	fclose(fp);
-    efree(buf);
+    free(buf);
     free_log_info(li);
     debug_return_ptr(NULL);
 }
@@ -922,23 +932,23 @@ static void
 free_log_info(struct log_info *li)
 {
     if (li != NULL) {
-	efree(li->cwd);
-	efree(li->user);
-	efree(li->runas_user);
-	efree(li->runas_group);
-	efree(li->tty);
-	efree(li->cmd);
-	efree(li);
+	free(li->cwd);
+	free(li->user);
+	free(li->runas_user);
+	free(li->runas_group);
+	free(li->tty);
+	free(li->cmd);
+	free(li);
     }
 }
 
 static int
-list_session(char *logfile, REGEX_T *re, const char *user, const char *tty)
+list_session(char *logfile, regex_t *re, const char *user, const char *tty)
 {
     char idbuf[7], *idstr, *cp;
     const char *timestr;
     struct log_info *li;
-    int rval = -1;
+    int ret = -1;
     debug_decl(list_session, SUDO_DEBUG_UTIL)
 
     if ((li = parse_logfile(logfile)) == NULL)
@@ -973,11 +983,11 @@ list_session(char *logfile, REGEX_T *re, const char *user, const char *tty)
 	printf("GROUP=%s ; ", li->runas_group);
     printf("TSID=%s ; COMMAND=%s\n", idstr, li->cmd);
 
-    rval = 0;
+    ret = 0;
 
 done:
     free_log_info(li);
-    debug_return_int(rval);
+    debug_return_int(ret);
 }
 
 static int
@@ -988,14 +998,14 @@ session_compare(const void *v1, const void *v2)
     return strcmp(s1, s2);
 }
 
-/* XXX - always returns 0, calls fatal() on failure */
+/* XXX - always returns 0, calls sudo_fatal() on failure */
 static int
-find_sessions(const char *dir, REGEX_T *re, const char *user, const char *tty)
+find_sessions(const char *dir, regex_t *re, const char *user, const char *tty)
 {
     DIR *d;
     struct dirent *dp;
     struct stat sb;
-    size_t sdlen, sessions_len = 0, sessions_size = 36*36;
+    size_t sdlen, sessions_len = 0, sessions_size = 0;
     unsigned int i;
     int len;
     char pathbuf[PATH_MAX], **sessions = NULL;
@@ -1008,19 +1018,18 @@ find_sessions(const char *dir, REGEX_T *re, const char *user, const char *tty)
 
     d = opendir(dir);
     if (d == NULL)
-	fatal(U_("unable to open %s"), dir);
+	sudo_fatal(U_("unable to open %s"), dir);
 
     /* XXX - would be faster to chdir and use relative names */
     sdlen = strlcpy(pathbuf, dir, sizeof(pathbuf));
     if (sdlen + 1 >= sizeof(pathbuf)) {
 	errno = ENAMETOOLONG;
-	fatal("%s/", dir);
+	sudo_fatal("%s/", dir);
     }
     pathbuf[sdlen++] = '/';
     pathbuf[sdlen] = '\0';
 
     /* Store potential session dirs for sorting. */
-    sessions = emalloc2(sessions_size, sizeof(char *));
     while ((dp = readdir(d)) != NULL) {
 	/* Skip "." and ".." */
 	if (dp->d_name[0] == '.' && (dp->d_name[1] == '\0' ||
@@ -1039,60 +1048,65 @@ find_sessions(const char *dir, REGEX_T *re, const char *user, const char *tty)
 
 	/* Add name to session list. */
 	if (sessions_len + 1 > sessions_size) {
-	    sessions_size <<= 1;
-	    sessions = erealloc3(sessions, sessions_size, sizeof(char *));
+	    if (sessions_size == 0)
+		sessions_size = 36 * 36 / 2;
+	    sessions = reallocarray(sessions, sessions_size, 2 * sizeof(char *));
+	    if (sessions == NULL)
+		sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    sessions_size *= 2;
 	}
-	sessions[sessions_len++] = estrdup(dp->d_name);
+	if ((sessions[sessions_len] = strdup(dp->d_name)) == NULL)
+	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	sessions_len++;
     }
     closedir(d);
 
     /* Sort and list the sessions. */
-    qsort(sessions, sessions_len, sizeof(char *), session_compare);
-    for (i = 0; i < sessions_len; i++) {
-	len = snprintf(&pathbuf[sdlen], sizeof(pathbuf) - sdlen,
-	    "%s/log", sessions[i]);
-	if (len <= 0 || (size_t)len >= sizeof(pathbuf) - sdlen) {
-	    errno = ENAMETOOLONG;
-	    fatal("%s/%s/log", dir, sessions[i]);
-	}
-	efree(sessions[i]);
+    if (sessions != NULL) {
+	qsort(sessions, sessions_len, sizeof(char *), session_compare);
+	for (i = 0; i < sessions_len; i++) {
+	    len = snprintf(&pathbuf[sdlen], sizeof(pathbuf) - sdlen,
+		"%s/log", sessions[i]);
+	    if (len <= 0 || (size_t)len >= sizeof(pathbuf) - sdlen) {
+		errno = ENAMETOOLONG;
+		sudo_fatal("%s/%s/log", dir, sessions[i]);
+	    }
+	    free(sessions[i]);
 
-	/* Check for dir with a log file. */
-	if (lstat(pathbuf, &sb) == 0 && S_ISREG(sb.st_mode)) {
-	    list_session(pathbuf, re, user, tty);
-	} else {
-	    /* Strip off "/log" and recurse if a dir. */
-	    pathbuf[sdlen + len - 4] = '\0';
-	    if (checked_type || (lstat(pathbuf, &sb) == 0 && S_ISDIR(sb.st_mode)))
-		find_sessions(pathbuf, re, user, tty);
+	    /* Check for dir with a log file. */
+	    if (lstat(pathbuf, &sb) == 0 && S_ISREG(sb.st_mode)) {
+		list_session(pathbuf, re, user, tty);
+	    } else {
+		/* Strip off "/log" and recurse if a dir. */
+		pathbuf[sdlen + len - 4] = '\0';
+		if (checked_type ||
+		    (lstat(pathbuf, &sb) == 0 && S_ISDIR(sb.st_mode)))
+		    find_sessions(pathbuf, re, user, tty);
+	    }
 	}
+	free(sessions);
     }
-    efree(sessions);
 
     debug_return_int(0);
 }
 
-/* XXX - always returns 0, calls fatal() on failure */
+/* XXX - always returns 0, calls sudo_fatal() on failure */
 static int
 list_sessions(int argc, char **argv, const char *pattern, const char *user,
     const char *tty)
 {
-    REGEX_T rebuf, *re = NULL;
+    regex_t rebuf, *re = NULL;
     debug_decl(list_sessions, SUDO_DEBUG_UTIL)
 
     /* Parse search expression if present */
     parse_expr(&search_expr, argv, false);
 
-#ifdef HAVE_REGCOMP
     /* optional regex */
     if (pattern) {
 	re = &rebuf;
 	if (regcomp(re, pattern, REG_EXTENDED|REG_NOSUB) != 0)
-	    fatalx(U_("invalid regular expression: %s"), pattern);
+	    sudo_fatalx(U_("invalid regular expression: %s"), pattern);
     }
-#else
-    re = (char *) pattern;
-#endif /* HAVE_REGCOMP */
 
     debug_return_int(find_sessions(session_dir, re, user, tty));
 }
@@ -1115,7 +1129,7 @@ check_input(int fd, int what, void *v)
 	switch (read(fd, &ch, 1)) {
 	case -1:
 	    if (errno != EINTR && errno != EAGAIN)
-		fatal(U_("unable to read %s"), "stdin");
+		sudo_fatal(U_("unable to read %s"), "stdin");
 	    break;
 	case 0:
 	    /* Ignore EOF. */
@@ -1254,12 +1268,12 @@ help(void)
 }
 
 /*
- * Cleanup hook for fatal()/fatalx()
+ * Cleanup hook for sudo_fatal()/sudo_fatalx()
   */
 static void
 sudoreplay_cleanup(void)
 {
-    term_restore(STDIN_FILENO, 0);
+    sudo_term_restore(STDIN_FILENO, false);
 }
 
 /*
@@ -1269,6 +1283,6 @@ sudoreplay_cleanup(void)
 static void
 sudoreplay_handler(int signo)
 {
-    term_restore(STDIN_FILENO, 0);
+    sudo_term_restore(STDIN_FILENO, false);
     kill(getpid(), signo);
 }

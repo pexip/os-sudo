@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,19 +16,10 @@
 
 #include <config.h>
 
+#include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
-# if defined(HAVE_MEMORY_H) && !defined(STDC_HEADERS)
-#  include <memory.h>
-# endif
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
@@ -40,8 +31,13 @@
 # include <inttypes.h>
 #endif
 
-#include "missing.h"
-#include "sha2.h"
+#include "sudo_compat.h"
+
+#ifdef HAVE_SHA224UPDATE
+# include <sha2.h>
+#else
+# include "compat/sha2.h"
+#endif
 
 __dso_public int main(int argc, char *argv[]);
 
@@ -49,8 +45,13 @@ static struct digest_function {
     const char *digest_name;
     const int digest_len;
     void (*init)(SHA2_CTX *);
+#ifdef SHA2_VOID_PTR
+    void (*update)(SHA2_CTX *, const void *, size_t);
+    void (*final)(void *, SHA2_CTX *);
+#else
     void (*update)(SHA2_CTX *, const unsigned char *, size_t);
     void (*final)(unsigned char *, SHA2_CTX *);
+#endif
 } digest_functions[] = {
     {
 	"SHA224",

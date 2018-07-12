@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2005, 2007, 2009-2013
+ * Copyright (c) 2004-2005, 2007, 2009-2015
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -45,24 +45,15 @@
 #include <sys/types.h>
 
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 
-#include "missing.h"
-#include "alloc.h"
-#include "sudo_debug.h"
+#include "sudoers.h"
 #include "redblack.h"
 
 static void rbrepair(struct rbtree *, struct rbnode *);
 static void rotate_left(struct rbtree *, struct rbnode *);
 static void rotate_right(struct rbtree *, struct rbnode *);
-static void _rbdestroy(struct rbtree *, struct rbnode *, void (*)(void *));
+static void rbdestroy_int(struct rbtree *, struct rbnode *, void (*)(void *));
 
 /*
  * Red-Black tree, see http://en.wikipedia.org/wiki/Red-black_tree
@@ -84,15 +75,21 @@ static void _rbdestroy(struct rbtree *, struct rbnode *, void (*)(void *));
 
 /*
  * Create a red black tree struct using the specified compare routine.
- * Allocates and returns the initialized (empty) tree.
+ * Allocates and returns the initialized (empty) tree or NULL if
+ * memory cannot be allocated.
  */
 struct rbtree *
 rbcreate(int (*compar)(const void *, const void*))
 {
     struct rbtree *tree;
-    debug_decl(rbcreate, SUDO_DEBUG_RBTREE)
+    debug_decl(rbcreate, SUDOERS_DEBUG_RBTREE)
 
-    tree = (struct rbtree *) emalloc(sizeof(*tree));
+    if ((tree = malloc(sizeof(*tree))) == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_ptr(NULL);
+    }
+
     tree->compar = compar;
 
     /*
@@ -121,7 +118,7 @@ static void
 rotate_left(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *child;
-    debug_decl(rotate_left, SUDO_DEBUG_RBTREE)
+    debug_decl(rotate_left, SUDOERS_DEBUG_RBTREE)
 
     child = node->right;
     node->right = child->left;
@@ -147,7 +144,7 @@ static void
 rotate_right(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *child;
-    debug_decl(rotate_right, SUDO_DEBUG_RBTREE)
+    debug_decl(rotate_right, SUDOERS_DEBUG_RBTREE)
 
     child = node->left;
     node->left = child->right;
@@ -168,26 +165,34 @@ rotate_right(struct rbtree *tree, struct rbnode *node)
 
 /*
  * Insert data pointer into a redblack tree.
- * Returns a NULL pointer on success.  If a node matching "data"
- * already exists, a pointer to the existant node is returned.
+ * Returns a 0 on success, 1 if a node matching "data" already exists
+ * (filling in "existing" if not NULL), or -1 on malloc() failure.
  */
-struct rbnode *
-rbinsert(struct rbtree *tree, void *data)
+int
+rbinsert(struct rbtree *tree, void *data, struct rbnode **existing)
 {
     struct rbnode *node = rbfirst(tree);
     struct rbnode *parent = rbroot(tree);
     int res;
-    debug_decl(rbinsert, SUDO_DEBUG_RBTREE)
+    debug_decl(rbinsert, SUDOERS_DEBUG_RBTREE)
 
     /* Find correct insertion point. */
     while (node != rbnil(tree)) {
 	parent = node;
-	if ((res = tree->compar(data, node->data)) == 0)
-	    debug_return_ptr(node);
+	if ((res = tree->compar(data, node->data)) == 0) {
+	    if (existing != NULL)
+		*existing = node;
+	    debug_return_int(1);
+	}
 	node = res < 0 ? node->left : node->right;
     }
 
-    node = (struct rbnode *) emalloc(sizeof(*node));
+    node = malloc(sizeof(*node));
+    if (node == NULL) {
+	sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
+	    "unable to allocate memory");
+	debug_return_int(-1);
+    }
     node->data = data;
     node->left = node->right = rbnil(tree);
     node->parent = parent;
@@ -257,7 +262,7 @@ rbinsert(struct rbtree *tree, void *data)
 	}
     }
     rbfirst(tree)->color = black;	/* first node is always black */
-    debug_return_ptr(NULL);
+    debug_return_int(0);
 }
 
 /*
@@ -269,7 +274,7 @@ rbfind(struct rbtree *tree, void *key)
 {
     struct rbnode *node = rbfirst(tree);
     int res;
-    debug_decl(rbfind, SUDO_DEBUG_RBTREE)
+    debug_decl(rbfind, SUDOERS_DEBUG_RBTREE)
 
     while (node != rbnil(tree)) {
 	if ((res = tree->compar(key, node->data)) == 0)
@@ -289,7 +294,7 @@ rbapply_node(struct rbtree *tree, struct rbnode *node,
     int (*func)(void *, void *), void *cookie, enum rbtraversal order)
 {
     int error;
-    debug_decl(rbapply_node, SUDO_DEBUG_RBTREE)
+    debug_decl(rbapply_node, SUDOERS_DEBUG_RBTREE)
 
     if (node != rbnil(tree)) {
 	if (order == preorder)
@@ -316,7 +321,7 @@ static struct rbnode *
 rbsuccessor(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *succ;
-    debug_decl(rbsuccessor, SUDO_DEBUG_RBTREE)
+    debug_decl(rbsuccessor, SUDOERS_DEBUG_RBTREE)
 
     if ((succ = node->right) != rbnil(tree)) {
 	while (succ->left != rbnil(tree))
@@ -335,29 +340,29 @@ rbsuccessor(struct rbtree *tree, struct rbnode *node)
  * Recursive portion of rbdestroy().
  */
 static void
-_rbdestroy(struct rbtree *tree, struct rbnode *node, void (*destroy)(void *))
+rbdestroy_int(struct rbtree *tree, struct rbnode *node, void (*destroy)(void *))
 {
-    debug_decl(_rbdestroy, SUDO_DEBUG_RBTREE)
+    debug_decl(rbdestroy_int, SUDOERS_DEBUG_RBTREE)
     if (node != rbnil(tree)) {
-	_rbdestroy(tree, node->left, destroy);
-	_rbdestroy(tree, node->right, destroy);
+	rbdestroy_int(tree, node->left, destroy);
+	rbdestroy_int(tree, node->right, destroy);
 	if (destroy != NULL)
 	    destroy(node->data);
-	efree(node);
+	free(node);
     }
     debug_return;
 }
 
 /*
- * Destroy the specified tree, calling the destructor destroy
+ * Destroy the specified tree, calling the destructor "destroy"
  * for each node and then freeing the tree itself.
  */
 void
 rbdestroy(struct rbtree *tree, void (*destroy)(void *))
 {
-    debug_decl(rbdestroy, SUDO_DEBUG_RBTREE)
-    _rbdestroy(tree, rbfirst(tree), destroy);
-    efree(tree);
+    debug_decl(rbdestroy, SUDOERS_DEBUG_RBTREE)
+    rbdestroy_int(tree, rbfirst(tree), destroy);
+    free(tree);
     debug_return;
 }
 
@@ -368,7 +373,7 @@ void *rbdelete(struct rbtree *tree, struct rbnode *z)
 {
     struct rbnode *x, *y;
     void *data = z->data;
-    debug_decl(rbdelete, SUDO_DEBUG_RBTREE)
+    debug_decl(rbdelete, SUDOERS_DEBUG_RBTREE)
 
     if (z->left == rbnil(tree) || z->right == rbnil(tree))
 	y = z;
@@ -410,7 +415,7 @@ static void
 rbrepair(struct rbtree *tree, struct rbnode *node)
 {
     struct rbnode *sibling;
-    debug_decl(rbrepair, SUDO_DEBUG_RBTREE)
+    debug_decl(rbrepair, SUDOERS_DEBUG_RBTREE)
 
     while (node->color == black && node != rbfirst(tree)) {
 	if (node == node->parent->left) {

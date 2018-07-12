@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2007-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,29 +20,20 @@
 #include <sys/stat.h>
 
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
 #include <ctype.h>
 
 #include "sudoers.h"
-#include "lbuf.h"
+#include "sudo_lbuf.h"
 
 extern struct sudo_nss sudo_nss_file;
 #ifdef HAVE_LDAP
@@ -51,6 +42,14 @@ extern struct sudo_nss sudo_nss_ldap;
 #ifdef HAVE_SSSD
 extern struct sudo_nss sudo_nss_sss;
 #endif
+
+/* Make sure we have not already inserted the nss entry. */
+#define SUDO_NSS_CHECK_UNUSED(nss, tag)					       \
+    if (nss.entries.tqe_next != NULL || nss.entries.tqe_prev != NULL) {      \
+	sudo_warnx("internal error: nsswitch entry \"%s\" already in use",     \
+	    tag);							       \
+	continue;							       \
+    }
 
 #if (defined(HAVE_LDAP) || defined(HAVE_SSSD)) && defined(_PATH_NSSWITCH_CONF)
 /*
@@ -61,21 +60,25 @@ struct sudo_nss_list *
 sudo_read_nss(void)
 {
     FILE *fp;
-    char *cp, *line = NULL;
+    char *line = NULL;
     size_t linesize = 0;
 #ifdef HAVE_SSSD
     bool saw_sss = false;
 #endif
-    bool saw_files = false;
+#ifdef HAVE_LDAP
     bool saw_ldap = false;
+#endif
+    bool saw_files = false;
     bool got_match = false;
     static struct sudo_nss_list snl = TAILQ_HEAD_INITIALIZER(snl);
-    debug_decl(sudo_read_nss, SUDO_DEBUG_NSS)
+    debug_decl(sudo_read_nss, SUDOERS_DEBUG_NSS)
 
     if ((fp = fopen(_PATH_NSSWITCH_CONF, "r")) == NULL)
 	goto nomatch;
 
-    while (sudo_parseln(&line, &linesize, NULL, fp) != -1) {
+    while (sudo_parseln(&line, &linesize, NULL, fp, 0) != -1) {
+	char *cp, *last;
+
 	/* Skip blank or comment lines */
 	if (*line == '\0')
 	    continue;
@@ -85,19 +88,22 @@ sudo_read_nss(void)
 	    continue;
 
 	/* Parse line */
-	for ((cp = strtok(line + 8, " \t")); cp != NULL; (cp = strtok(NULL, " \t"))) {
+	for ((cp = strtok_r(line + 8, " \t", &last)); cp != NULL; (cp = strtok_r(NULL, " \t", &last))) {
 	    if (strcasecmp(cp, "files") == 0 && !saw_files) {
+		SUDO_NSS_CHECK_UNUSED(sudo_nss_file, "files");
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_file, entries);
-		got_match = true;
+		got_match = saw_files = true;
 #ifdef HAVE_LDAP
 	    } else if (strcasecmp(cp, "ldap") == 0 && !saw_ldap) {
+		SUDO_NSS_CHECK_UNUSED(sudo_nss_ldap, "ldap");
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_ldap, entries);
-		got_match = true;
+		got_match = saw_ldap = true;
 #endif
 #ifdef HAVE_SSSD
 	    } else if (strcasecmp(cp, "sss") == 0 && !saw_sss) {
+		SUDO_NSS_CHECK_UNUSED(sudo_nss_sss, "sss");
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_sss, entries);
-		got_match = true;
+		got_match = saw_sss = true;
 #endif
 	    } else if (strcasecmp(cp, "[NOTFOUND=return]") == 0 && got_match) {
 		/* NOTFOUND affects the most recent entry */
@@ -136,7 +142,7 @@ struct sudo_nss_list *
 sudo_read_nss(void)
 {
     FILE *fp;
-    char *cp, *ep, *line = NULL;
+    char *cp, *ep, *last, *line = NULL;
     size_t linesize = 0;
 #ifdef HAVE_SSSD
     bool saw_sss = false;
@@ -145,12 +151,12 @@ sudo_read_nss(void)
     bool saw_ldap = false;
     bool got_match = false;
     static struct sudo_nss_list snl = TAILQ_HEAD_INITIALIZER(snl);
-    debug_decl(sudo_read_nss, SUDO_DEBUG_NSS)
+    debug_decl(sudo_read_nss, SUDOERS_DEBUG_NSS)
 
     if ((fp = fopen(_PATH_NETSVC_CONF, "r")) == NULL)
 	goto nomatch;
 
-    while (sudo_parseln(&line, &linesize, NULL, fp) != -1) {
+    while (sudo_parseln(&line, &linesize, NULL, fp, 0) != -1) {
 	/* Skip blank or comment lines */
 	if (*(cp = line) == '\0')
 	    continue;
@@ -165,7 +171,7 @@ sudo_read_nss(void)
 	    continue;
 
 	/* Parse line */
-	for ((cp = strtok(cp, ",")); cp != NULL; (cp = strtok(NULL, ","))) {
+	for ((cp = strtok_r(cp, ",", &last)); cp != NULL; (cp = strtok_r(NULL, ",", &last))) {
 	    /* Trim leading whitespace. */
 	    while (isspace((unsigned char)*cp))
 		cp++;
@@ -173,20 +179,20 @@ sudo_read_nss(void)
 	    if (!saw_files && strncasecmp(cp, "files", 5) == 0 &&
 		(isspace((unsigned char)cp[5]) || cp[5] == '\0')) {
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_file, entries);
-		got_match = true;
+		got_match = saw_files = true;
 		ep = &cp[5];
 #ifdef HAVE_LDAP
 	    } else if (!saw_ldap && strncasecmp(cp, "ldap", 4) == 0 &&
 		(isspace((unsigned char)cp[4]) || cp[4] == '\0')) {
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_ldap, entries);
-		got_match = true;
+		got_match = saw_ldap = true;
 		ep = &cp[4];
 #endif
 #ifdef HAVE_SSSD
 	    } else if (!saw_sss && strncasecmp(cp, "sss", 3) == 0 &&
 		(isspace((unsigned char)cp[3]) || cp[3] == '\0')) {
 		TAILQ_INSERT_TAIL(&snl, &sudo_nss_sss, entries);
-		got_match = true;
+		got_match = saw_sss = true;
 		ep = &cp[3];
 #endif
 	    } else {
@@ -226,7 +232,7 @@ struct sudo_nss_list *
 sudo_read_nss(void)
 {
     static struct sudo_nss_list snl = TAILQ_HEAD_INITIALIZER(snl);
-    debug_decl(sudo_read_nss, SUDO_DEBUG_NSS)
+    debug_decl(sudo_read_nss, SUDOERS_DEBUG_NSS)
 
 #  ifdef HAVE_SSSD
     TAILQ_INSERT_TAIL(&snl, &sudo_nss_sss, entries);
@@ -248,99 +254,128 @@ output(const char *buf)
 {
     struct sudo_conv_message msg;
     struct sudo_conv_reply repl;
-    debug_decl(output, SUDO_DEBUG_NSS)
+    debug_decl(output, SUDOERS_DEBUG_NSS)
 
     /* Call conversation function */
     memset(&msg, 0, sizeof(msg));
     msg.msg_type = SUDO_CONV_INFO_MSG;
     msg.msg = buf;
     memset(&repl, 0, sizeof(repl));
-    if (sudo_conv(1, &msg, &repl) == -1)
+    if (sudo_conv(1, &msg, &repl, NULL) == -1)
 	debug_return_int(0);
     debug_return_int(strlen(buf));
 }
 
 /*
  * Print out privileges for the specified user.
- * We only get here if the user is allowed to run something.
+ * Returns true if the user is allowed to run commands, false if not
+ * or -1 on error.
  */
-void
+int
 display_privs(struct sudo_nss_list *snl, struct passwd *pw)
 {
     struct sudo_nss *nss;
-    struct lbuf defs, privs;
+    struct sudo_lbuf defs, privs;
     struct stat sb;
     int cols, count, olen;
-    debug_decl(display_privs, SUDO_DEBUG_NSS)
+    debug_decl(display_privs, SUDOERS_DEBUG_NSS)
 
     cols = sudo_user.cols;
     if (fstat(STDOUT_FILENO, &sb) == 0 && S_ISFIFO(sb.st_mode))
 	cols = 0;
-    lbuf_init(&defs, output, 4, NULL, cols);
-    lbuf_init(&privs, output, 8, NULL, cols);
+    sudo_lbuf_init(&defs, output, 4, NULL, cols);
+    sudo_lbuf_init(&privs, output, 8, NULL, cols);
 
     /* Display defaults from all sources. */
-    lbuf_append(&defs, _("Matching Defaults entries for %s on %s:\n"),
+    sudo_lbuf_append(&defs, _("Matching Defaults entries for %s on %s:\n"),
 	pw->pw_name, user_srunhost);
     count = 0;
     TAILQ_FOREACH(nss, snl, entries) {
-	count += nss->display_defaults(nss, pw, &defs);
+	const int n = nss->display_defaults(nss, pw, &defs);
+	if (n == -1)
+	    goto bad;
+	count += n;
     }
-    if (count)
-	lbuf_append(&defs, "\n\n");
-    else
+    if (count) {
+	sudo_lbuf_append(&defs, "\n\n");
+    } else {
+	/* Undo Defaults header. */
 	defs.len = 0;
+    }
 
     /* Display Runas and Cmnd-specific defaults from all sources. */
     olen = defs.len;
-    lbuf_append(&defs, _("Runas and Command-specific defaults for %s:\n"),
+    sudo_lbuf_append(&defs, _("Runas and Command-specific defaults for %s:\n"),
 	pw->pw_name);
     count = 0;
     TAILQ_FOREACH(nss, snl, entries) {
-	count += nss->display_bound_defaults(nss, pw, &defs);
+	const int n = nss->display_bound_defaults(nss, pw, &defs);
+	if (n == -1)
+	    goto bad;
+	count += n;
     }
-    if (count)
-	lbuf_append(&defs, "\n\n");
-    else
+    if (count) {
+	sudo_lbuf_append(&defs, "\n\n");
+    } else {
+	/* Undo Defaults header. */
 	defs.len = olen;
+    }
 
     /* Display privileges from all sources. */
-    lbuf_append(&privs,
+    sudo_lbuf_append(&privs,
 	_("User %s may run the following commands on %s:\n"),
 	pw->pw_name, user_srunhost);
     count = 0;
     TAILQ_FOREACH(nss, snl, entries) {
-	count += nss->display_privs(nss, pw, &privs);
+	const int n = nss->display_privs(nss, pw, &privs);
+	if (n == -1)
+	    goto bad;
+	count += n;
     }
     if (count == 0) {
 	defs.len = 0;
 	privs.len = 0;
-	lbuf_append(&privs, _("User %s is not allowed to run sudo on %s.\n"),
+	sudo_lbuf_append(&privs,
+	    _("User %s is not allowed to run sudo on %s.\n"),
 	    pw->pw_name, user_shost);
     }
-    lbuf_print(&defs);
-    lbuf_print(&privs);
+    if (sudo_lbuf_error(&defs) || sudo_lbuf_error(&privs))
+	goto bad;
 
-    lbuf_destroy(&defs);
-    lbuf_destroy(&privs);
+    sudo_lbuf_print(&defs);
+    sudo_lbuf_print(&privs);
 
-    debug_return;
+    sudo_lbuf_destroy(&defs);
+    sudo_lbuf_destroy(&privs);
+
+    debug_return_int(count > 0);
+bad:
+    sudo_lbuf_destroy(&defs);
+    sudo_lbuf_destroy(&privs);
+
+    debug_return_int(-1);
 }
 
 /*
  * Check user_cmnd against sudoers and print the matching entry if the
  * command is allowed.
- * Returns true if the command is allowed, else false.
+ * Returns true if the command is allowed, false if not or -1 on error.
  */
-bool
+int
 display_cmnd(struct sudo_nss_list *snl, struct passwd *pw)
 {
     struct sudo_nss *nss;
-    debug_decl(display_cmnd, SUDO_DEBUG_NSS)
+    debug_decl(display_cmnd, SUDOERS_DEBUG_NSS)
 
+    /* XXX - display_cmnd return value is backwards */
+    /* XXX - doesn't handle commands allowed by one backend denied by another. */
     TAILQ_FOREACH(nss, snl, entries) {
-	if (nss->display_cmnd(nss, pw) == 0)
-	    debug_return_bool(true);
+	switch (nss->display_cmnd(nss, pw)) {
+	    case 0:
+		debug_return_int(true);
+	    case -1:
+		debug_return_int(-1);
+	}
     }
-    debug_return_bool(false);
+    debug_return_int(false);
 }

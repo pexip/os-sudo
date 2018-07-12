@@ -1,6 +1,6 @@
 dnl Local m4 macros for autoconf (used by sudo)
 dnl
-dnl Copyright (c) 1994-1996, 1998-2005, 2007-2014
+dnl Copyright (c) 1994-1996, 1998-2005, 2007-2015
 dnl	Todd C. Miller <Todd.Miller@courtesan.com>
 dnl
 dnl XXX - should cache values in all cases!!!
@@ -10,73 +10,37 @@ dnl checks for programs
 dnl
 dnl check for sendmail in well-known locations
 dnl
-AC_DEFUN([SUDO_PROG_SENDMAIL], [AC_MSG_CHECKING([for sendmail])
-found=no
-for p in "/usr/sbin/sendmail" "/usr/lib/sendmail" "/usr/etc/sendmail" "/usr/ucblib/sendmail" "/usr/local/lib/sendmail" "/usr/local/bin/sendmail"; do
-    if test -f "$p"; then
-	found=yes
-	AC_MSG_RESULT([$p])
-	SUDO_DEFINE_UNQUOTED(_PATH_SUDO_SENDMAIL, "$p")
-	break
-    fi
-done
-if test X"$found" != X"yes"; then
-    AC_MSG_RESULT([not found])
-fi
+AC_ARG_VAR([SENDMAILPROG], [The fully-qualified path to the sendmail program to use.])
+AC_DEFUN([SUDO_PROG_SENDMAIL], [
+    AC_PATH_PROG([SENDMAILPROG], [sendmail], [], [/usr/sbin$PATH_SEPARATOR/usr/lib$PATH_SEPARATOR/usr/etc$PATH_SEPARATOR/usr/ucblib$PATH_SEPARATOR/usr/local/lib$PATH_SEPARATOR/usr/local/bin])
+    test -n "${ac_cv_path_SENDMAILPROG}" && SUDO_DEFINE_UNQUOTED(_PATH_SUDO_SENDMAIL, "${ac_cv_path_SENDMAILPROG}")
 ])dnl
 
 dnl
 dnl check for vi in well-known locations
 dnl
-AC_DEFUN([SUDO_PROG_VI], [AC_MSG_CHECKING([for vi])
-found=no
-for editor in "/usr/bin/vi" "/bin/vi" "/usr/ucb/vi" "/usr/bsd/vi" "/usr/local/bin/vi"; do
-    if test -f "$editor"; then
-	found=yes
-	AC_MSG_RESULT([$editor])
-	SUDO_DEFINE_UNQUOTED(_PATH_VI, "$editor")
-	break
-    fi
-done
-if test X"$found" != X"yes"; then
-    AC_MSG_RESULT([not found])
-fi
+AC_ARG_VAR([VIPROG], [The fully-qualified path to the vi program to use.])
+AC_DEFUN([SUDO_PROG_VI], [
+    AC_PATH_PROG([VIPROG], [vi], [], [/usr/bin$PATH_SEPARATOR/bin$PATH_SEPARATOR/usr/ucb$PATH_SEPARATOR/usr/bsd$PATH_SEPARATOR/usr/local/bin])
+    test -n "${ac_cv_path_VIPROG}" && SUDO_DEFINE_UNQUOTED(_PATH_VI, "${ac_cv_path_VIPROG}")
 ])dnl
 
 dnl
 dnl check for mv in well-known locations
 dnl
-AC_DEFUN([SUDO_PROG_MV], [AC_MSG_CHECKING([for mv])
-found=no
-for p in "/usr/bin/mv" "/bin/mv" "/usr/ucb/mv" "/usr/sbin/mv"; do
-    if test -f "$p"; then
-	found=yes
-	AC_MSG_RESULT([$p])
-	SUDO_DEFINE_UNQUOTED(_PATH_MV, "$p")
-	break
-    fi
-done
-if test X"$found" != X"yes"; then
-    AC_MSG_RESULT([not found])
-fi
+AC_ARG_VAR([MVPROG], [The fully-qualified path to the mv program to use.])
+AC_DEFUN([SUDO_PROG_MV], [
+    AC_PATH_PROG([MVPROG], [mv], [], [/usr/bin$PATH_SEPARATOR/bin$PATH_SEPARATOR/usr/ucb$PATH_SEPARATOR/usr/local/bin])
+    test -n "${ac_cv_path_MVPROG}" && SUDO_DEFINE_UNQUOTED(_PATH_MV, "${ac_cv_path_MVPROG}")
 ])dnl
 
 dnl
 dnl check for bourne shell in well-known locations
 dnl
-AC_DEFUN([SUDO_PROG_BSHELL], [AC_MSG_CHECKING([for bourne shell])
-found=no
-for p in "/bin/sh" "/usr/bin/sh" "/sbin/sh" "/usr/sbin/sh" "/bin/ksh" "/usr/bin/ksh" "/bin/bash" "/usr/bin/bash"; do
-    if test -f "$p"; then
-	found=yes
-	AC_MSG_RESULT([$p])
-	SUDO_DEFINE_UNQUOTED(_PATH_BSHELL, "$p")
-	break
-    fi
-done
-if test X"$found" != X"yes"; then
-    AC_MSG_RESULT([not found])
-fi
+AC_ARG_VAR([BSHELLPROG], [The fully-qualified path to the Bourne shell to use.])
+AC_DEFUN([SUDO_PROG_BSHELL], [
+    AC_PATH_PROG([BSHELLPROG], [sh], [/usr/bin$PATH_SEPARATOR/bin$PATH_SEPARATOR/usr/sbin$PATH_SEPARATOR/sbin])
+    test -n "${ac_cv_path_BSHELLPROG}" && SUDO_DEFINE_UNQUOTED(_PATH_BSHELL, "${ac_cv_path_BSHELLPROG}")
 ])dnl
 
 dnl
@@ -115,6 +79,26 @@ elif test -d "/usr/adm"; then
     SUDO_DEFINE(_PATH_SUDO_LOGFILE, "/usr/adm/sudo.log")
 else
     AC_MSG_RESULT(unknown, you will have to set _PATH_SUDO_LOGFILE by hand)
+fi
+])dnl
+
+dnl
+dnl Detect time zone file directory, if any.
+dnl
+AC_DEFUN([SUDO_TZDIR], [AC_MSG_CHECKING(time zone data directory)
+tzdir="$with_tzdir"
+if test -z "$tzdir"; then
+    tzdir=no
+    for d in /usr/share /usr/share/lib /usr/lib /etc; do
+	if test -d "$d/zoneinfo"; then
+	    tzdir="$d/zoneinfo"
+	    break
+	fi
+    done
+fi
+AC_MSG_RESULT([$tzdir])
+if test "${tzdir}" != "no"; then
+    SUDO_DEFINE_UNQUOTED(_PATH_ZONEINFO, "$tzdir")
 fi
 ])dnl
 
@@ -216,6 +200,7 @@ AC_DEFUN([SUDO_FUNC_ISBLANK],
     AC_DEFINE(HAVE_ISBLANK, 1, [Define if you have isblank(3).])
   else
     AC_LIBOBJ(isblank)
+    SUDO_APPEND_COMPAT_EXP(isblank)
   fi
 ])
 
@@ -281,6 +266,24 @@ int putenv(const char *string) {return 0;}], [])],
 ])
 
 dnl
+dnl Check if the data argument for the sha2 functions is void * or u_char *
+dnl
+AC_DEFUN([SUDO_FUNC_SHA2_VOID_PTR],
+[AC_CACHE_CHECK([whether the data argument of SHA224Update() is void *],
+sudo_cv_func_sha2_void_ptr,
+[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT
+#include <sha2.h>
+void SHA224Update(SHA2_CTX *context, const void *data, size_t len) {return;}], [])],
+    [sudo_cv_func_sha2_void_ptr=yes],
+    [sudo_cv_func_sha2_void_ptr=no])
+  ])
+  if test $sudo_cv_func_sha2_void_ptr = yes; then
+    AC_DEFINE(SHA2_VOID_PTR, 1,
+      [Define to 1 if the sha2 functions use `const void *' instead of `const unsigned char'.])
+  fi
+])
+
+dnl
 dnl check for sa_len field in struct sockaddr
 dnl
 AC_DEFUN([SUDO_SOCK_SA_LEN], [
@@ -319,7 +322,6 @@ AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #include <pwd.h>
 #include <limits.h>
 #include <sys/types.h>
-#include <sys/param.h>
 main() {
   FILE *f;
   char b[1024];
@@ -344,33 +346,20 @@ dnl Append a libpath to an LDFLAGS style variable if not already present.
 dnl Also appends to the _R version unless rpath is disabled.
 dnl
 AC_DEFUN([SUDO_APPEND_LIBPATH], [
-    case "${$1}" in
-	*"-L$2"|*"-L$2 ")
-	    ;;
-	*)
-	    $1="${$1} -L$2"
-	    if test X"$enable_rpath" = X"yes"; then
-		$1_R="${$1_R} -R$2"
-	    fi
-	    ;;
-    esac
+    AX_APPEND_FLAG([-L$2], [$1])
+    if test X"$enable_rpath" = X"yes"; then
+	AX_APPEND_FLAG([-R$2], [$1_R])
+    fi
 ])
 
 dnl
-dnl Append a directory to CPPFLAGS if not already present.
+dnl Append one or more symbols to COMPAT_EXP
 dnl
-AC_DEFUN([SUDO_APPEND_CPPFLAGS], [
-    case "${CPPFLAGS}" in
-	*"$1"|*"$1 ")
-	    ;;
-	*)
-	    if test X"${CPPFLAGS}" = X""; then
-		CPPFLAGS="$1"
-	    else
-		CPPFLAGS="${CPPFLAGS} $1"
-	    fi
-	    ;;
-    esac
+AC_DEFUN([SUDO_APPEND_COMPAT_EXP], [
+    for _sym in $1; do
+	COMPAT_EXP="${COMPAT_EXP}${_sym}
+"
+    done
 ])
 
 dnl

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999-2005, 2010-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1999-2005, 2010-2015 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,23 +22,14 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 
 #include "sudoers.h"
@@ -50,7 +41,7 @@
 int
 sudo_passwd_init(struct passwd *pw, sudo_auth *auth)
 {
-    debug_decl(sudo_passwd_init, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_passwd_init, SUDOERS_DEBUG_AUTH)
 
 #ifdef HAVE_SKEYACCESS
     if (skeyaccess(pw, user_tty, NULL, NULL) == 0)
@@ -59,32 +50,28 @@ sudo_passwd_init(struct passwd *pw, sudo_auth *auth)
     sudo_setspent();
     auth->data = sudo_getepw(pw);
     sudo_endspent();
-    debug_return_int(AUTH_SUCCESS);
+    debug_return_int(auth->data ? AUTH_SUCCESS : AUTH_FATAL);
 }
 
 int
-sudo_passwd_verify(struct passwd *pw, char *pass, sudo_auth *auth)
+sudo_passwd_verify(struct passwd *pw, char *pass, sudo_auth *auth, struct sudo_conv_callback *callback)
 {
     char sav, *epass;
     char *pw_epasswd = auth->data;
     size_t pw_len;
     int matched = 0;
-    debug_decl(sudo_passwd_verify, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_passwd_verify, SUDOERS_DEBUG_AUTH)
 
-    pw_len = strlen(pw_epasswd);
-
-#ifdef HAVE_GETAUTHUID
-    /* Ultrix shadow passwords may use crypt16() */
-    epass = (char *) crypt16(pass, pw_epasswd);
-    if (epass != NULL && strcmp(pw_epasswd, epass) == 0)
-	debug_return_int(AUTH_SUCCESS);
-#endif /* HAVE_GETAUTHUID */
+    /* An empty plain-text password must match an empty encrypted password. */
+    if (pass[0] == '\0')
+	debug_return_int(pw_epasswd[0] ? AUTH_FAILURE : AUTH_SUCCESS);
 
     /*
      * Truncate to 8 chars if standard DES since not all crypt()'s do this.
      * If this turns out not to be safe we will have to use OS #ifdef's (sigh).
      */
     sav = pass[8];
+    pw_len = strlen(pw_epasswd);
     if (pw_len == DESLEN || HAS_AGEINFO(pw_epasswd, pw_len))
 	pass[8] = '\0';
 
@@ -111,11 +98,11 @@ sudo_passwd_cleanup(pw, auth)
     sudo_auth *auth;
 {
     char *pw_epasswd = auth->data;
-    debug_decl(sudo_passwd_cleanup, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_passwd_cleanup, SUDOERS_DEBUG_AUTH)
 
     if (pw_epasswd != NULL) {
 	memset_s(pw_epasswd, SUDO_CONV_REPL_MAX, 0, strlen(pw_epasswd));
-	efree(pw_epasswd);
+	free(pw_epasswd);
     }
     debug_return_int(AUTH_SUCCESS);
 }

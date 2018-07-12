@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2013
+ * Copyright (c) 1996, 1998-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -26,27 +26,14 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
-#if defined(HAVE_MALLOC_H) && !defined(STDC_HEADERS)
-# include <malloc.h>
-#endif /* HAVE_MALLOC_H && !STDC_HEADERS */
-#include <ctype.h>
+#include <unistd.h>
 #include <errno.h>
 
 #include "sudoers.h"
@@ -54,18 +41,19 @@
 #include "toke.h"
 #include <gram.h>
 
-static int arg_len = 0;
-static int arg_size = 0;
+static unsigned int arg_len = 0;
+static unsigned int arg_size = 0;
 
 bool
-fill_txt(const char *src, int len, int olen)
+fill_txt(const char *src, size_t len, size_t olen)
 {
     char *dst;
-    debug_decl(fill_txt, SUDO_DEBUG_PARSER)
+    int h;
+    debug_decl(fill_txt, SUDOERS_DEBUG_PARSER)
 
     dst = olen ? realloc(sudoerslval.string, olen + len + 1) : malloc(len + 1);
     if (dst == NULL) {
-	warning(NULL);
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	sudoerserror(NULL);
 	debug_return_bool(false);
     }
@@ -75,10 +63,8 @@ fill_txt(const char *src, int len, int olen)
     dst += olen;
     while (len--) {
 	if (*src == '\\' && len) {
-	    if (src[1] == 'x' && len >= 3 && 
-		isxdigit((unsigned char) src[2]) &&
-		isxdigit((unsigned char) src[3])) {
-		*dst++ = hexchar(src + 2);
+	    if (src[1] == 'x' && len >= 3 && (h = hexchar(src + 2)) != -1) {
+		*dst++ = h;
 		src += 4;
 		len -= 3;
 	    } else {
@@ -95,10 +81,10 @@ fill_txt(const char *src, int len, int olen)
 }
 
 bool
-append(const char *src, int len)
+append(const char *src, size_t len)
 {
     int olen = 0;
-    debug_decl(append, SUDO_DEBUG_PARSER)
+    debug_decl(append, SUDOERS_DEBUG_PARSER)
 
     if (sudoerslval.string != NULL)
 	olen = strlen(sudoerslval.string);
@@ -110,17 +96,17 @@ append(const char *src, int len)
     ((c) == ',' || (c) == ':' || (c) == '=' || (c) == ' ' || (c) == '\t' || (c) == '#')
 
 bool
-fill_cmnd(const char *src, int len)
+fill_cmnd(const char *src, size_t len)
 {
     char *dst;
-    int i;
-    debug_decl(fill_cmnd, SUDO_DEBUG_PARSER)
+    size_t i;
+    debug_decl(fill_cmnd, SUDOERS_DEBUG_PARSER)
 
     arg_len = arg_size = 0;
 
-    dst = sudoerslval.command.cmnd = (char *) malloc(len + 1);
+    dst = sudoerslval.command.cmnd = malloc(len + 1);
     if (sudoerslval.command.cmnd == NULL) {
-	warning(NULL);
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	sudoerserror(NULL);
 	debug_return_bool(false);
     }
@@ -139,31 +125,26 @@ fill_cmnd(const char *src, int len)
 }
 
 bool
-fill_args(const char *s, int len, int addspace)
+fill_args(const char *s, size_t len, int addspace)
 {
-    int new_len;
+    unsigned int new_len;
     char *p;
-    debug_decl(fill_args, SUDO_DEBUG_PARSER)
+    debug_decl(fill_args, SUDOERS_DEBUG_PARSER)
 
-    if (sudoerslval.command.args == NULL) {
+    if (arg_size == 0) {
 	addspace = 0;
 	new_len = len;
     } else
 	new_len = arg_len + len + addspace;
 
     if (new_len >= arg_size) {
-	/* Allocate more space than we need for subsequent args */
-	while (new_len >= (arg_size += COMMANDARGINC))
-	    ;
+	/* Allocate in increments of 128 bytes to avoid excessive realloc(). */
+	arg_size = (new_len + 1 + 127) & ~127;
 
-	p = sudoerslval.command.args ?
-	    (char *) realloc(sudoerslval.command.args, arg_size) :
-	    (char *) malloc(arg_size);
+	p = realloc(sudoerslval.command.args, arg_size);
 	if (p == NULL) {
-	    efree(sudoerslval.command.args);
-	    warning(NULL);
-	    sudoerserror(NULL);
-	    debug_return_bool(false);
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    goto bad;
 	} else
 	    sudoerslval.command.args = p;
     }
@@ -172,13 +153,19 @@ fill_args(const char *s, int len, int addspace)
     p = sudoerslval.command.args + arg_len;
     if (addspace)
 	*p++ = ' ';
-    if (strlcpy(p, s, arg_size - (p - sudoerslval.command.args)) != (size_t)len) {
-	warningx(U_("fill_args: buffer overflow"));	/* paranoia */
-	sudoerserror(NULL);
-	debug_return_bool(false);
+    len = arg_size - (p - sudoerslval.command.args);
+    if (strlcpy(p, s, len) >= len) {
+	sudo_warnx(U_("internal error, %s overflow"), __func__);
+	goto bad;
     }
     arg_len = new_len;
     debug_return_bool(true);
+bad:
+    sudoerserror(NULL);
+    free(sudoerslval.command.args);
+    sudoerslval.command.args = NULL;
+    arg_len = arg_size = 0;
+    debug_return_bool(false);
 }
 
 /*
@@ -190,7 +177,7 @@ bool
 ipv6_valid(const char *s)
 {
     int nmatch = 0;
-    debug_decl(ipv6_valid, SUDO_DEBUG_PARSER)
+    debug_decl(ipv6_valid, SUDOERS_DEBUG_PARSER)
 
     for (; *s != '\0'; s++) {
 	if (s[0] == ':' && s[1] == ':') {

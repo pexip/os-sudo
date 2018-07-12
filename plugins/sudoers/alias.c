@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2005, 2007-2013
+ * Copyright (c) 2004-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,23 +21,14 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRING_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <errno.h>
 
 #include "sudoers.h"
@@ -60,11 +51,11 @@ alias_compare(const void *v1, const void *v2)
     const struct alias *a1 = (const struct alias *)v1;
     const struct alias *a2 = (const struct alias *)v2;
     int res;
-    debug_decl(alias_compare, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_compare, SUDOERS_DEBUG_ALIAS)
 
-    if (v1 == NULL)
+    if (a1 == NULL)
 	res = -1;
-    else if (v2 == NULL)
+    else if (a2 == NULL)
 	res = 1;
     else if ((res = strcmp(a1->name, a2->name)) == 0)
 	res = a1->type - a2->type;
@@ -83,7 +74,7 @@ alias_get(char *name, int type)
     struct alias key;
     struct rbnode *node;
     struct alias *a = NULL;
-    debug_decl(alias_get, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_get, SUDOERS_DEBUG_ALIAS)
 
     key.name = name;
     key.type = type;
@@ -111,29 +102,41 @@ alias_get(char *name, int type)
 void
 alias_put(struct alias *a)
 {
-    debug_decl(alias_put, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_put, SUDOERS_DEBUG_ALIAS)
     a->used = false;
     debug_return;
 }
 
 /*
  * Add an alias to the aliases redblack tree.
+ * Note that "file" must be a reference-counted string.
  * Returns NULL on success and an error string on failure.
  */
-char *
-alias_add(char *name, int type, struct member *members)
+const char *
+alias_add(char *name, int type, char *file, int lineno, struct member *members)
 {
     static char errbuf[512];
     struct alias *a;
-    debug_decl(alias_add, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_add, SUDOERS_DEBUG_ALIAS)
 
-    a = ecalloc(1, sizeof(*a));
+    a = calloc(1, sizeof(*a));
+    if (a == NULL) {
+	strlcpy(errbuf, N_("unable to allocate memory"), sizeof(errbuf));
+	debug_return_str(errbuf);
+    }
     a->name = name;
     a->type = type;
     /* a->used = false; */
+    a->file = rcstr_addref(file);
+    a->lineno = lineno;
     HLTQ_TO_TAILQ(&a->members, members, entries);
-    if (rbinsert(aliases, a)) {
-	snprintf(errbuf, sizeof(errbuf), N_("Alias `%s' already defined"), name);
+    switch (rbinsert(aliases, a, NULL)) {
+    case 1:
+	snprintf(errbuf, sizeof(errbuf), N_("Alias \"%s\" already defined"), name);
+	alias_free(a);
+	debug_return_str(errbuf);
+    case -1:
+	strlcpy(errbuf, N_("unable to allocate memory"), sizeof(errbuf));
 	alias_free(a);
 	debug_return_str(errbuf);
     }
@@ -146,7 +149,7 @@ alias_add(char *name, int type, struct member *members)
 void
 alias_apply(int (*func)(void *, void *), void *cookie)
 {
-    debug_decl(alias_apply, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_apply, SUDOERS_DEBUG_ALIAS)
 
     rbapply(aliases, func, cookie, inorder);
 
@@ -159,7 +162,7 @@ alias_apply(int (*func)(void *, void *), void *cookie)
 bool
 no_aliases(void)
 {
-    debug_decl(no_aliases, SUDO_DEBUG_ALIAS)
+    debug_decl(no_aliases, SUDOERS_DEBUG_ALIAS)
     debug_return_bool(rbisempty(aliases));
 }
 
@@ -170,22 +173,12 @@ void
 alias_free(void *v)
 {
     struct alias *a = (struct alias *)v;
-    struct member *m;
-    struct sudo_command *c;
-    void *next;
-    debug_decl(alias_free, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_free, SUDOERS_DEBUG_ALIAS)
 
-    efree(a->name);
-    TAILQ_FOREACH_SAFE(m, &a->members, entries, next) {
-	if (m->type == COMMAND) {
-		c = (struct sudo_command *) m->name;
-		efree(c->cmnd);
-		efree(c->args);
-	}
-	efree(m->name);
-	efree(m);
-    }
-    efree(a);
+    free(a->name);
+    rcstr_delref(a->file);
+    free_members(&a->members);
+    free(a);
 
     debug_return;
 }
@@ -198,7 +191,7 @@ alias_remove(char *name, int type)
 {
     struct rbnode *node;
     struct alias key;
-    debug_decl(alias_remove, SUDO_DEBUG_ALIAS)
+    debug_decl(alias_remove, SUDOERS_DEBUG_ALIAS)
 
     key.name = name;
     key.type = type;
@@ -209,14 +202,14 @@ alias_remove(char *name, int type)
     debug_return_ptr(rbdelete(aliases, node));
 }
 
-void
+bool
 init_aliases(void)
 {
-    debug_decl(init_aliases, SUDO_DEBUG_ALIAS)
+    debug_decl(init_aliases, SUDOERS_DEBUG_ALIAS)
 
     if (aliases != NULL)
 	rbdestroy(aliases, alias_free);
     aliases = rbcreate(alias_compare);
 
-    debug_return;
+    debug_return_bool(aliases != NULL);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2012 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2010, 2012-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,23 +19,13 @@
 #include <sys/types.h>
 
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#if defined(HAVE_MALLOC_H) && !defined(STDC_HEADERS)
-# include <malloc.h>
-#endif /* HAVE_MALLOC_H && !STDC_HEADERS */
 #include <errno.h>
 
 #include "sudo.h"
@@ -45,8 +35,13 @@
 extern char **environ;		/* global environment pointer */
 static char **priv_environ;	/* private environment pointer */
 
-static char *
-rpl_getenv(const char *name)
+/*
+ * NOTE: we don't use dlsym() to find the libc getenv()
+ *	 since this may allocate memory on some systems (glibc)
+ *	 which leads to a hang if malloc() calls getenv (jemalloc).
+ */
+char *
+getenv_unhooked(const char *name)
 {
     char **ep, *val = NULL;
     size_t namelen = 0;
@@ -63,22 +58,7 @@ rpl_getenv(const char *name)
     return val;
 }
 
-typedef char * (*sudo_fn_getenv_t)(const char *);
-
-char *
-getenv_unhooked(const char *name)
-{
-    sudo_fn_getenv_t fn;
-
-    fn = (sudo_fn_getenv_t)sudo_dso_findsym(SUDO_DSO_NEXT, "getenv");
-    if (fn != NULL)
-	return fn(name);
-    return rpl_getenv(name);
-}
-
-__dso_public char *getenv(const char *);
-
-char *
+__dso_public char *
 getenv(const char *name)
 {
     char *val = NULL;
@@ -125,7 +105,9 @@ rpl_putenv(PUTENV_CONST char *string)
     /* Append at the end if not already found. */
     if (!found) {
 	size_t env_len = (size_t)(ep - environ);
-	char **envp = erealloc3(priv_environ, env_len + 2, sizeof(char *));
+	char **envp = reallocarray(priv_environ, env_len + 2, sizeof(char *));
+	if (envp == NULL)
+	    return -1;
 	if (environ != priv_environ)
 	    memcpy(envp, environ, env_len * sizeof(char *));
 	envp[env_len++] = (char *)string;
@@ -148,7 +130,7 @@ putenv_unhooked(PUTENV_CONST char *string)
     return rpl_putenv(string);
 }
 
-int
+__dso_public int
 putenv(PUTENV_CONST char *string)
 {
     switch (process_hooks_putenv((char *)string)) {
@@ -178,7 +160,7 @@ rpl_setenv(const char *var, const char *val, int overwrite)
      * just ignores the '=' and anything after it.
      */
     for (src = var; *src != '\0' && *src != '='; src++)
-	;
+	continue;
     esize = (size_t)(src - var) + 2;
     if (val) {
         esize += strlen(val);	/* glibc treats a NULL val as "" */
@@ -200,7 +182,11 @@ rpl_setenv(const char *var, const char *val, int overwrite)
 	free(envstr);
 	return 0;
     }
-    return rpl_putenv(envstr);
+    if (rpl_putenv(envstr) == -1) {
+	free(envstr);
+	return -1;
+    }
+    return 0;
 }
 
 typedef int (*sudo_fn_setenv_t)(const char *, const char *, int);
@@ -216,7 +202,7 @@ setenv_unhooked(const char *var, const char *val, int overwrite)
     return rpl_setenv(var, val, overwrite);
 }
 
-int
+__dso_public int
 setenv(const char *var, const char *val, int overwrite)
 {
     switch (process_hooks_setenv(var, val, overwrite)) {
@@ -264,7 +250,7 @@ typedef int (*sudo_fn_unsetenv_t)(const char *);
 static int
 unsetenv_unhooked(const char *var)
 {
-    int rval = 0;
+    int ret = 0;
     sudo_fn_unsetenv_t fn;
 
     fn = (sudo_fn_unsetenv_t)sudo_dso_findsym(SUDO_DSO_NEXT, "unsetenv");
@@ -272,35 +258,35 @@ unsetenv_unhooked(const char *var)
 # ifdef UNSETENV_VOID
 	fn(var);
 # else
-	rval = fn(var);
+	ret = fn(var);
 # endif
     } else {
-	rval = rpl_unsetenv(var);
+	ret = rpl_unsetenv(var);
     }
-    return rval;
+    return ret;
 }
 
 #ifdef UNSETENV_VOID
-void
+__dso_public void
 #else
-int
+__dso_public int
 #endif
 unsetenv(const char *var)
 {
-    int rval;
+    int ret;
 
     switch (process_hooks_unsetenv(var)) {
 	case SUDO_HOOK_RET_STOP:
-	    rval = 0;
+	    ret = 0;
 	    break;
 	case SUDO_HOOK_RET_ERROR:
-	    rval = -1;
+	    ret = -1;
 	    break;
 	default:
-	    rval = unsetenv_unhooked(var);
+	    ret = unsetenv_unhooked(var);
 	    break;
     }
 #ifndef UNSETENV_VOID
-    return rval;
+    return ret;
 #endif
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994-1996, 1998-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1994-1996, 1998-2016 Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -29,23 +29,14 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #ifdef HAVE_NL_LANGINFO
 # include <langinfo.h>
 #endif /* HAVE_NL_LANGINFO */
@@ -63,13 +54,11 @@
 #define INCORRECT_PASSWORD_ATTEMPT	((char *)0x01)
 
 static void do_syslog(int, char *);
-static void do_logfile(char *);
-static void send_mail(const char *fmt, ...);
-static int should_mail(int);
+static bool do_logfile(const char *);
+static bool send_mail(const char *fmt, ...);
+static bool should_mail(int);
 static void mysyslog(int, const char *, ...);
 static char *new_logline(const char *, int);
-
-extern char **NewArgv; /* XXX - for auditing */
 
 #define MAXSYSLOGTRIES	16	/* num of retries for broken syslogs */
 
@@ -77,39 +66,16 @@ extern char **NewArgv; /* XXX - for auditing */
  * We do an openlog(3)/closelog(3) for each message because some
  * authentication methods (notably PAM) use syslog(3) for their
  * own nefarious purposes and may call openlog(3) and closelog(3).
- * Note that because we don't want to assume that all systems have
- * vsyslog(3) (HP-UX doesn't) "%m" will not be expanded.
- * Sadly this is a maze of #ifdefs.
  */
 static void
 mysyslog(int pri, const char *fmt, ...)
 {
-#ifdef BROKEN_SYSLOG
-    int i;
-#endif
-    char buf[MAXSYSLOGLEN+1];
     va_list ap;
-    debug_decl(mysyslog, SUDO_DEBUG_LOGGING)
+    debug_decl(mysyslog, SUDOERS_DEBUG_LOGGING)
 
     va_start(ap, fmt);
-#ifdef LOG_NFACILITIES
     openlog("sudo", 0, def_syslog);
-#else
-    openlog("sudo", 0);
-#endif
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-#ifdef BROKEN_SYSLOG
-    /*
-     * Some versions of syslog(3) don't guarantee success and return
-     * an int (notably HP-UX < 10.0).  So, if at first we don't succeed,
-     * try, try again...
-     */
-    for (i = 0; i < MAXSYSLOGTRIES; i++)
-	if (syslog(pri, "%s", buf) == 0)
-	    break;
-#else
-    syslog(pri, "%s", buf);
-#endif /* BROKEN_SYSLOG */
+    vsyslog(pri, fmt, ap);
     va_end(ap);
     closelog();
     debug_return;
@@ -117,7 +83,7 @@ mysyslog(int pri, const char *fmt, ...)
 
 /*
  * Log a message to syslog, pre-pending the username and splitting the
- * message into parts if it is longer than MAXSYSLOGLEN.
+ * message into parts if it is longer than syslog_maxlen.
  */
 static void
 do_syslog(int pri, char *msg)
@@ -126,7 +92,11 @@ do_syslog(int pri, char *msg)
     char *p, *tmp, save;
     const char *fmt;
     int oldlocale;
-    debug_decl(do_syslog, SUDO_DEBUG_LOGGING)
+    debug_decl(do_syslog, SUDOERS_DEBUG_LOGGING)
+
+    /* A priority of -1 corresponds to "none". */
+    if (pri == -1)
+	debug_return;
 
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
 
@@ -134,7 +104,7 @@ do_syslog(int pri, char *msg)
      * Log the full line, breaking into multiple syslog(3) calls if necessary
      */
     fmt = _("%8s : %s");
-    maxlen = MAXSYSLOGLEN - (strlen(fmt) - 5 + strlen(user_name));
+    maxlen = def_syslog_maxlen - (strlen(fmt) - 5 + strlen(user_name));
     for (p = msg; *p != '\0'; ) {
 	len = strlen(p);
 	if (len > maxlen) {
@@ -156,13 +126,13 @@ do_syslog(int pri, char *msg)
 
 	    /* Advance p and eliminate leading whitespace */
 	    for (p = tmp; *p == ' '; p++)
-		;
+		continue;
 	} else {
 	    mysyslog(pri, fmt, user_name, p);
 	    p += len;
 	}
 	fmt = _("%8s : (command continued) %s");
-	maxlen = MAXSYSLOGLEN - (strlen(fmt) - 5 + strlen(user_name));
+	maxlen = def_syslog_maxlen - (strlen(fmt) - 5 + strlen(user_name));
     }
 
     sudoers_setlocale(oldlocale, NULL);
@@ -170,79 +140,99 @@ do_syslog(int pri, char *msg)
     debug_return;
 }
 
-static void
-do_logfile(char *msg)
+static bool
+do_logfile(const char *msg)
 {
+    static bool warned = false;
+    const char *timestr;
+    int len, oldlocale;
+    bool ret = false;
     char *full_line;
-    size_t len;
     mode_t oldmask;
-    int oldlocale;
     FILE *fp;
-    debug_decl(do_logfile, SUDO_DEBUG_LOGGING)
+    debug_decl(do_logfile, SUDOERS_DEBUG_LOGGING)
 
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
 
-    oldmask = umask(077);
+    oldmask = umask(S_IRWXG|S_IRWXO);
     fp = fopen(def_logfile, "a");
     (void) umask(oldmask);
     if (fp == NULL) {
-	send_mail(_("unable to open log file: %s: %s"),
-	    def_logfile, strerror(errno));
-    } else if (!lock_file(fileno(fp), SUDO_LOCK)) {
-	send_mail(_("unable to lock log file: %s: %s"),
-	    def_logfile, strerror(errno));
-    } else {
-	const char *timestr = get_timestr(time(NULL), def_log_year);
-	if (timestr == NULL)
-	    timestr = "invalid date";
-	if ((size_t)def_loglinelen < sizeof(LOG_INDENT)) {
-	    /* Don't pretty-print long log file lines (hard to grep) */
-	    if (def_log_host) {
-		(void) fprintf(fp, "%s : %s : HOST=%s : %s\n",
-		    timestr, user_name, user_srunhost, msg);
-	    } else {
-		(void) fprintf(fp, "%s : %s : %s\n", timestr, user_name, msg);
-	    }
-	} else {
-	    if (def_log_host) {
-		len = easprintf(&full_line, "%s : %s : HOST=%s : %s",
-		    timestr, user_name, user_srunhost, msg);
-	    } else {
-		len = easprintf(&full_line, "%s : %s : %s",
-		    timestr, user_name, msg);
-	    }
-
-	    /*
-	     * Print out full_line with word wrap around def_loglinelen chars.
-	     */
-	    writeln_wrap(fp, full_line, len, def_loglinelen);
-	    efree(full_line);
+	if (!warned) {
+	    log_warning(SLOG_SEND_MAIL|SLOG_NO_LOG,
+		N_("unable to open log file: %s"), def_logfile);
+	    warned = true;
 	}
-	(void) fflush(fp);
-	(void) lock_file(fileno(fp), SUDO_UNLOCK);
-	(void) fclose(fp);
+	goto done;
     }
+    if (!sudo_lock_file(fileno(fp), SUDO_LOCK)) {
+	if (!warned) {
+	    log_warning(SLOG_SEND_MAIL|SLOG_NO_LOG,
+		N_("unable to lock log file: %s"), def_logfile);
+	    warned = true;
+	}
+	goto done;
+    }
+
+    timestr = get_timestr(time(NULL), def_log_year);
+    if (timestr == NULL)
+	timestr = "invalid date";
+    if (def_log_host) {
+	len = asprintf(&full_line, "%s : %s : HOST=%s : %s",
+	    timestr, user_name, user_srunhost, msg);
+    } else {
+	len = asprintf(&full_line, "%s : %s : %s",
+	    timestr, user_name, msg);
+    }
+    if (len == -1) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	goto done;
+    }
+    if ((size_t)def_loglinelen < sizeof(LOG_INDENT)) {
+	/* Don't pretty-print long log file lines (hard to grep). */
+	(void) fputs(full_line, fp);
+	(void) fputc('\n', fp);
+    } else {
+	/* Write line with word wrap around def_loglinelen chars. */
+	writeln_wrap(fp, full_line, len, def_loglinelen);
+    }
+    free(full_line);
+    (void) fflush(fp);
+    if (ferror(fp)) {
+	if (!warned) {
+	    log_warning(SLOG_SEND_MAIL|SLOG_NO_LOG,
+		N_("unable to write log file: %s"), def_logfile);
+	    warned = true;
+	}
+	goto done;
+    }
+    ret = true;
+
+done:
+    if (fp != NULL)
+	(void) fclose(fp);
     sudoers_setlocale(oldlocale, NULL);
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
  * Log, audit and mail the denial message, optionally informing the user.
  */
-void
+bool
 log_denial(int status, bool inform_user)
 {
     const char *message;
     char *logline;
     int oldlocale;
-    debug_decl(log_denial, SUDO_DEBUG_LOGGING)
+    bool uid_changed, ret = true;
+    debug_decl(log_denial, SUDOERS_DEBUG_LOGGING)
 
     /* Handle auditing first (audit_failure() handles the locale itself). */
     if (ISSET(status, FLAG_NO_USER | FLAG_NO_HOST))
-	audit_failure(NewArgv, N_("No user or host"));
+	audit_failure(NewArgc, NewArgv, N_("No user or host"));
     else
-	audit_failure(NewArgv, N_("validation failure"));
+	audit_failure(NewArgc, NewArgv, N_("validation failure"));
 
     /* Log and mail messages should be in the sudoers locale. */
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
@@ -256,9 +246,11 @@ log_denial(int status, bool inform_user)
 	message = _("command not allowed");
 
     logline = new_logline(message, 0);
+    if (logline == NULL)
+	debug_return_bool(false);
 
     /* Become root if we are not already. */
-    set_perms(PERM_ROOT|PERM_NOEXIT);
+    uid_changed = set_perms(PERM_ROOT);
 
     if (should_mail(status))
 	send_mail("%s", logline);	/* send mail based on status */
@@ -268,12 +260,15 @@ log_denial(int status, bool inform_user)
      */
     if (def_syslog)
 	do_syslog(def_syslog_badpri, logline);
-    if (def_logfile)
-	do_logfile(logline);
+    if (def_logfile && !do_logfile(logline))
+	ret = false;
 
-    restore_perms();
+    if (uid_changed) {
+	if (!restore_perms())
+	    ret = false;		/* XXX - return -1 instead? */
+    }
 
-    efree(logline);
+    free(logline);
 
     /* Restore locale. */
     sudoers_setlocale(oldlocale, NULL);
@@ -303,23 +298,23 @@ log_denial(int status, bool inform_user)
 	}
 	sudoers_setlocale(oldlocale, NULL);
     }
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
  * Log and audit that user was not allowed to run the command.
  */
-void
+bool
 log_failure(int status, int flags)
 {
-    bool inform_user = true;
-    debug_decl(log_failure, SUDO_DEBUG_LOGGING)
+    bool ret, inform_user = true;
+    debug_decl(log_failure, SUDOERS_DEBUG_LOGGING)
 
     /* The user doesn't always get to see the log message (path info). */
     if (!ISSET(status, FLAG_NO_USER | FLAG_NO_HOST) && def_path_info &&
 	(flags == NOT_FOUND_DOT || flags == NOT_FOUND))
 	inform_user = false;
-    log_denial(status, inform_user);
+    ret = log_denial(status, inform_user);
 
     if (!inform_user) {
 	/*
@@ -330,25 +325,26 @@ log_failure(int status, int flags)
 	 * their path to just contain a single dir.
 	 */
 	if (flags == NOT_FOUND)
-	    warningx(U_("%s: command not found"), user_cmnd);
+	    sudo_warnx(U_("%s: command not found"), user_cmnd);
 	else if (flags == NOT_FOUND_DOT)
-	    warningx(U_("ignoring `%s' found in '.'\nUse `sudo ./%s' if this is the `%s' you wish to run."), user_cmnd, user_cmnd, user_cmnd);
+	    sudo_warnx(U_("ignoring \"%s\" found in '.'\nUse \"sudo ./%s\" if this is the \"%s\" you wish to run."), user_cmnd, user_cmnd, user_cmnd);
     }
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
  * Log and audit that user was not able to authenticate themselves.
  */
-void
+bool
 log_auth_failure(int status, unsigned int tries)
 {
-    int flags = NO_MAIL;
-    debug_decl(log_auth_failure, SUDO_DEBUG_LOGGING)
+    int flags = 0;
+    bool ret = true;
+    debug_decl(log_auth_failure, SUDOERS_DEBUG_LOGGING)
 
     /* Handle auditing first. */
-    audit_failure(NewArgv, N_("authentication failure"));
+    audit_failure(NewArgc, NewArgv, N_("authentication failure"));
 
     /*
      * Do we need to send mail?
@@ -356,47 +352,50 @@ log_auth_failure(int status, unsigned int tries)
      * so if we are going to send an email about the denial, that takes
      * precedence.
      */
-    if (ISSET(status, VALIDATE_OK)) {
+    if (ISSET(status, VALIDATE_SUCCESS)) {
 	/* Command allowed, auth failed; do we need to send mail? */
 	if (def_mail_badpass || def_mail_always)
-	    flags = 0;
+	    SET(flags, SLOG_SEND_MAIL);
     } else {
 	/* Command denied, auth failed; make sure we don't send mail twice. */
 	if (def_mail_badpass && !should_mail(status))
-	    flags = 0;
+	    SET(flags, SLOG_SEND_MAIL);
 	/* Don't log the bad password message, we'll log a denial instead. */
-	flags |= NO_LOG;
+	SET(flags, SLOG_NO_LOG);
     }
 
     /*
      * If sudoers denied the command we'll log that separately.
      */
     if (ISSET(status, FLAG_BAD_PASSWORD))
-	log_warning(flags, INCORRECT_PASSWORD_ATTEMPT, tries);
+	ret = log_warningx(flags, INCORRECT_PASSWORD_ATTEMPT, tries);
     else if (ISSET(status, FLAG_NON_INTERACTIVE))
-	log_warning(flags, N_("a password is required"));
+	ret = log_warningx(flags, N_("a password is required"));
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
  * Log and potentially mail the allowed command.
  */
-void
+bool
 log_allowed(int status)
 {
     char *logline;
     int oldlocale;
-    debug_decl(log_allowed, SUDO_DEBUG_LOGGING)
+    bool uid_changed, ret = true;
+    debug_decl(log_allowed, SUDOERS_DEBUG_LOGGING)
 
     /* Log and mail messages should be in the sudoers locale. */
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
 
-    logline = new_logline(NULL, 0);
+    if ((logline = new_logline(NULL, 0)) == NULL)
+	debug_return_bool(false);
 
     /* Become root if we are not already. */
-    set_perms(PERM_ROOT|PERM_NOEXIT);
+    uid_changed = set_perms(PERM_ROOT);
 
+    /* XXX - return value */
     if (should_mail(status))
 	send_mail("%s", logline);	/* send mail based on status */
 
@@ -405,32 +404,36 @@ log_allowed(int status)
      */
     if (def_syslog)
 	do_syslog(def_syslog_goodpri, logline);
-    if (def_logfile)
-	do_logfile(logline);
+    if (def_logfile && !do_logfile(logline))
+	ret = false;
 
-    restore_perms();
+    if (uid_changed) {
+	if (!restore_perms())
+	    ret = false;		/* XXX - return -1 instead? */
+    }
 
-    efree(logline);
+    free(logline);
 
     sudoers_setlocale(oldlocale, NULL);
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
 /*
- * Perform logging for log_warning()/log_fatal()
+ * Perform logging for log_warning()/log_warningx().
  */
-static void
+static bool
 vlog_warning(int flags, const char *fmt, va_list ap)
 {
     int oldlocale, serrno = errno;
     char *logline, *message;
+    bool uid_changed, ret = true;
     va_list ap2;
-    debug_decl(vlog_error, SUDO_DEBUG_LOGGING)
+    int len;
+    debug_decl(vlog_error, SUDOERS_DEBUG_LOGGING)
 
-    /* Need extra copy of ap for warning() below. */
-    if (!ISSET(flags, NO_STDERR))
-	va_copy(ap2, ap);
+    /* Need extra copy of ap for sudo_vwarn()/sudo_vwarnx() below. */
+    va_copy(ap2, ap);
 
     /* Log messages should be in the sudoers locale. */
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, &oldlocale);
@@ -438,14 +441,19 @@ vlog_warning(int flags, const char *fmt, va_list ap)
     /* Expand printf-style format + args (with a special case). */
     if (fmt == INCORRECT_PASSWORD_ATTEMPT) {
 	unsigned int tries = va_arg(ap, unsigned int);
-	easprintf(&message, ngettext("%u incorrect password attempt",
+	len = asprintf(&message, ngettext("%u incorrect password attempt",
 	    "%u incorrect password attempts", tries), tries);
     } else {
-	evasprintf(&message, _(fmt), ap);
+	len = vasprintf(&message, _(fmt), ap);
+    }
+    if (len == -1) {
+	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	ret = false;
+	goto done;
     }
 
     /* Log to debug file. */
-    if (USE_ERRNO) {
+    if (SLOG_USE_ERRNO) {
 	sudo_debug_printf2(NULL, NULL, 0,
 	    SUDO_DEBUG_WARN|SUDO_DEBUG_ERRNO|sudo_debug_subsys, "%s", message);
     } else {
@@ -453,89 +461,98 @@ vlog_warning(int flags, const char *fmt, va_list ap)
 	    SUDO_DEBUG_WARN|sudo_debug_subsys, "%s", message);
     }
 
-    if (ISSET(flags, MSG_ONLY)) {
+    if (ISSET(flags, SLOG_RAW_MSG)) {
 	logline = message;
     } else {
-	logline = new_logline(message, ISSET(flags, USE_ERRNO) ? serrno : 0);
-        efree(message);
+	logline = new_logline(message, ISSET(flags, SLOG_USE_ERRNO) ? serrno : 0);
+        free(message);
+	if (logline == NULL) {
+	    ret = false;
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    goto done;
+	}
     }
 
     /* Become root if we are not already. */
-    set_perms(PERM_ROOT|PERM_NOEXIT);
+    uid_changed = set_perms(PERM_ROOT);
 
     /*
      * Send a copy of the error via mail.
+     * XXX - return value
      */
-    if (!ISSET(flags, NO_MAIL))
+    if (ISSET(flags, SLOG_SEND_MAIL))
 	send_mail("%s", logline);
 
     /*
      * Log to syslog and/or a file.
      */
-    if (!ISSET(flags, NO_LOG)) {
+    if (!ISSET(flags, SLOG_NO_LOG)) {
 	if (def_syslog)
 	    do_syslog(def_syslog_badpri, logline);
-	if (def_logfile)
-	    do_logfile(logline);
+	if (def_logfile && !do_logfile(logline))
+	    ret = false;
     }
 
-    restore_perms();
+    if (uid_changed) {
+	if (!restore_perms())
+	    ret = false;
+    }
 
-    efree(logline);
-
-    sudoers_setlocale(oldlocale, NULL);
+    free(logline);
 
     /*
      * Tell the user (in their locale).
      */
-    if (!ISSET(flags, NO_STDERR)) {
-	sudoers_setlocale(SUDOERS_LOCALE_USER, &oldlocale);
+    if (!ISSET(flags, SLOG_NO_STDERR)) {
+	sudoers_setlocale(SUDOERS_LOCALE_USER, NULL);
 	if (fmt == INCORRECT_PASSWORD_ATTEMPT) {
 	    unsigned int tries = va_arg(ap2, unsigned int);
-	    warningx_nodebug(ngettext("%u incorrect password attempt",
+	    sudo_warnx_nodebug(ngettext("%u incorrect password attempt",
 		"%u incorrect password attempts", tries), tries);
 	} else {
-	    if (ISSET(flags, USE_ERRNO))
-		vwarning_nodebug(_(fmt), ap2);
+	    errno = serrno;
+	    if (ISSET(flags, SLOG_USE_ERRNO))
+		sudo_vwarn_nodebug(_(fmt), ap2);
 	    else
-		vwarningx_nodebug(_(fmt), ap2);
+		sudo_vwarnx_nodebug(_(fmt), ap2);
 	}
-	sudoers_setlocale(oldlocale, NULL);
-	va_end(ap2);
     }
 
-    debug_return;
+done:
+    va_end(ap2);
+    sudoers_setlocale(oldlocale, NULL);
+
+    debug_return_bool(ret);
 }
 
-void
+bool
 log_warning(int flags, const char *fmt, ...)
 {
     va_list ap;
-    debug_decl(log_error, SUDO_DEBUG_LOGGING)
+    bool ret;
+    debug_decl(log_error, SUDOERS_DEBUG_LOGGING)
 
     /* Log the error. */
     va_start(ap, fmt);
-    vlog_warning(flags, fmt, ap);
+    ret = vlog_warning(flags|SLOG_USE_ERRNO, fmt, ap);
     va_end(ap);
 
-    debug_return;
+    debug_return_bool(ret);
 }
 
-void
-log_fatal(int flags, const char *fmt, ...)
+bool
+log_warningx(int flags, const char *fmt, ...)
 {
     va_list ap;
-    debug_decl(log_error, SUDO_DEBUG_LOGGING)
+    bool ret;
+    debug_decl(log_error, SUDOERS_DEBUG_LOGGING)
 
     /* Log the error. */
     va_start(ap, fmt);
-    vlog_warning(flags, fmt, ap);
+    ret = vlog_warning(flags, fmt, ap);
     va_end(ap);
 
-    /* Exit the plugin. */
-    sudoers_cleanup();
-    sudo_debug_exit(__func__, __FILE__, __LINE__, sudo_debug_subsys);
-    fatal_longjmp(1);
+    debug_return_bool(ret);
 }
 
 #define MAX_MAILFLAGS	63
@@ -543,7 +560,7 @@ log_fatal(int flags, const char *fmt, ...)
 /*
  * Send a message to MAILTO user
  */
-static void
+static bool
 send_mail(const char *fmt, ...)
 {
     FILE *mail;
@@ -551,7 +568,6 @@ send_mail(const char *fmt, ...)
     const char *timestr;
     int fd, pfd[2], status;
     pid_t pid, rv;
-    sigaction_t sa;
     struct stat sb;
     va_list ap;
 #ifndef NO_ROOT_MAILER
@@ -564,21 +580,22 @@ send_mail(const char *fmt, ...)
 	NULL
     };
 #endif /* NO_ROOT_MAILER */
-    debug_decl(send_mail, SUDO_DEBUG_LOGGING)
+    debug_decl(send_mail, SUDOERS_DEBUG_LOGGING)
 
-    /* Just return if mailer is disabled. */
+    /* If mailer is disabled just return. */
     if (!def_mailerpath || !def_mailto)
-	debug_return;
+	debug_return_bool(true);
 
     /* Make sure the mailer exists and is a regular file. */
     if (stat(def_mailerpath, &sb) != 0 || !S_ISREG(sb.st_mode))
-	debug_return;
+	debug_return_bool(false);
 
     /* Fork and return, child will daemonize. */
     switch (pid = sudo_debug_fork()) {
 	case -1:
 	    /* Error. */
-	    fatal(U_("unable to fork"));
+	    sudo_warn(U_("unable to fork"));
+	    debug_return_bool(false);
 	    break;
 	case 0:
 	    /* Child. */
@@ -599,18 +616,23 @@ send_mail(const char *fmt, ...)
 	    break;
 	default:
 	    /* Parent. */
-	    do {
+	    for (;;) {
 		rv = waitpid(pid, &status, 0);
-	    } while (rv == -1 && errno == EINTR);
-	    return; /* not debug */
+		if (rv == -1 && errno != EINTR)
+		    break;
+		if (rv != -1 && !WIFSTOPPED(status))
+		    break;
+	    }
+	    return true; /* not debug */
     }
 
     /* Daemonize - disassociate from session/tty. */
     if (setsid() == -1)
-      warning("setsid");
+      sudo_warn("setsid");
     if (chdir("/") == -1)
-      warning("chdir(/)");
-    if ((fd = open(_PATH_DEVNULL, O_RDWR, 0644)) != -1) {
+      sudo_warn("chdir(/)");
+    fd = open(_PATH_DEVNULL, O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
+    if (fd != -1) {
 	(void) dup2(fd, STDIN_FILENO);
 	(void) dup2(fd, STDOUT_FILENO);
 	(void) dup2(fd, STDERR_FILENO);
@@ -618,17 +640,8 @@ send_mail(const char *fmt, ...)
 
     sudoers_setlocale(SUDOERS_LOCALE_SUDOERS, NULL);
 
-    /* Close password, group and other fds so we don't leak. */
-    sudo_endpwent();
-    sudo_endgrent();
+    /* Close fds so we don't leak anything. */
     closefrom(STDERR_FILENO + 1);
-
-    /* Ignore SIGPIPE in case mailer exits prematurely (or is missing). */
-    memset(&sa, 0, sizeof(sa));
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_INTERRUPT;
-    sa.sa_handler = SIG_IGN;
-    (void) sigaction(SIGPIPE, &sa, NULL);
 
     if (pipe(pfd) == -1) {
 	mysyslog(LOG_ERR, _("unable to open pipe: %m"));
@@ -649,7 +662,7 @@ send_mail(const char *fmt, ...)
 	    break;
 	case 0:
 	    {
-		char *argv[MAX_MAILFLAGS + 1];
+		char *last, *argv[MAX_MAILFLAGS + 1];
 		char *mflags, *mpath = def_mailerpath;
 		int i;
 
@@ -666,17 +679,20 @@ send_mail(const char *fmt, ...)
 		(void) close(pfd[1]);
 
 		/* Build up an argv based on the mailer path and flags */
-		mflags = estrdup(def_mailerflags);
+		if ((mflags = strdup(def_mailerflags)) == NULL) {
+		    mysyslog(LOG_ERR, _("unable to allocate memory"));
+		    _exit(127);
+		}
 		if ((argv[0] = strrchr(mpath, '/')))
 		    argv[0]++;
 		else
 		    argv[0] = mpath;
 
 		i = 1;
-		if ((p = strtok(mflags, " \t"))) {
+		if ((p = strtok_r(mflags, " \t", &last))) {
 		    do {
 			argv[i] = p;
-		    } while (++i < MAX_MAILFLAGS && (p = strtok(NULL, " \t")));
+		    } while (++i < MAX_MAILFLAGS && (p = strtok_r(NULL, " \t", &last)));
 		}
 		argv[i] = NULL;
 
@@ -685,10 +701,10 @@ send_mail(const char *fmt, ...)
 		 * (so user cannot kill it) or as the user (for the paranoid).
 		 */
 #ifndef NO_ROOT_MAILER
-		set_perms(PERM_ROOT|PERM_NOEXIT);
+		(void) set_perms(PERM_ROOT);
 		execve(mpath, argv, root_envp);
 #else
-		set_perms(PERM_FULL_USER|PERM_NOEXIT);
+		(void) set_perms(PERM_FULL_USER);
 		execv(mpath, argv);
 #endif /* NO_ROOT_MAILER */
 		mysyslog(LOG_ERR, _("unable to execute %s: %m"), mpath);
@@ -737,9 +753,13 @@ send_mail(const char *fmt, ...)
     fputs("\n\n", mail);
 
     fclose(mail);
-    do {
-        rv = waitpid(pid, &status, 0);
-    } while (rv == -1 && errno == EINTR);
+    for (;;) {
+	rv = waitpid(pid, &status, 0);
+	if (rv == -1 && errno != EINTR)
+	    break;
+	if (rv != -1 && !WIFSTOPPED(status))
+	    break;
+    }
     sudo_debug_exit(__func__, __FILE__, __LINE__, sudo_debug_subsys);
     _exit(0);
 }
@@ -747,15 +767,16 @@ send_mail(const char *fmt, ...)
 /*
  * Determine whether we should send mail based on "status" and defaults options.
  */
-static int
+static bool
 should_mail(int status)
 {
-    debug_decl(should_mail, SUDO_DEBUG_LOGGING)
+    debug_decl(should_mail, SUDOERS_DEBUG_LOGGING)
 
     debug_return_bool(def_mail_always || ISSET(status, VALIDATE_ERROR) ||
+	(def_mail_all_cmnds && ISSET(sudo_mode, (MODE_RUN|MODE_EDIT))) ||
 	(def_mail_no_user && ISSET(status, FLAG_NO_USER)) ||
 	(def_mail_no_host && ISSET(status, FLAG_NO_HOST)) ||
-	(def_mail_no_perms && !ISSET(status, VALIDATE_OK)));
+	(def_mail_no_perms && !ISSET(status, VALIDATE_SUCCESS)));
 }
 
 #define	LL_TTY_STR	"TTY="
@@ -780,13 +801,13 @@ should_mail(int status)
 static char *
 new_logline(const char *message, int serrno)
 {
-    char *line, *errstr = NULL, *evstr = NULL;
+    char *line = NULL, *errstr = NULL, *evstr = NULL;
 #ifndef SUDOERS_NO_SEQ
     char sessid[7];
 #endif
     const char *tsid = NULL;
     size_t len = 0;
-    debug_decl(new_logline, SUDO_DEBUG_LOGGING)
+    debug_decl(new_logline, SUDOERS_DEBUG_LOGGING)
 
 #ifndef SUDOERS_NO_SEQ
     /* A TSID may be a sudoers-style session ID or a free-form string. */
@@ -829,13 +850,16 @@ new_logline(const char *message, int serrno)
 
 	for (ep = sudo_user.env_vars; *ep != NULL; ep++)
 	    evlen += strlen(*ep) + 1;
-	evstr = emalloc(evlen);
-	evstr[0] = '\0';
-	for (ep = sudo_user.env_vars; *ep != NULL; ep++) {
-	    strlcat(evstr, *ep, evlen);
-	    strlcat(evstr, " ", evlen);	/* NOTE: last one will fail */
+	if (evlen != 0) {
+	    if ((evstr = malloc(evlen)) == NULL)
+		goto oom;
+	    evstr[0] = '\0';
+	    for (ep = sudo_user.env_vars; *ep != NULL; ep++) {
+		strlcat(evstr, *ep, evlen);
+		strlcat(evstr, " ", evlen);	/* NOTE: last one will fail */
+	    }
+	    len += sizeof(LL_ENV_STR) + 2 + evlen;
 	}
-	len += sizeof(LL_ENV_STR) + 2 + evlen;
     }
     if (user_cmnd != NULL) {
 	/* Note: we log "sudo -l command arg ..." as "list command arg ..." */
@@ -849,7 +873,8 @@ new_logline(const char *message, int serrno)
     /*
      * Allocate and build up the line.
      */
-    line = emalloc(++len);
+    if ((line = malloc(++len)) == NULL)
+	goto oom;
     line[0] = '\0';
 
     if (message != NULL) {
@@ -893,7 +918,8 @@ new_logline(const char *message, int serrno)
 	    strlcat(line, evstr, len) >= len ||
 	    strlcat(line, " ; ", len) >= len)
 	    goto toobig;
-	efree(evstr);
+	free(evstr);
+	evstr = NULL;
     }
     if (user_cmnd != NULL) {
 	if (strlcat(line, LL_CMND_STR, len) >= len)
@@ -910,6 +936,13 @@ new_logline(const char *message, int serrno)
     }
 
     debug_return_str(line);
+oom:
+    free(evstr);
+    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+    debug_return_str(NULL);
 toobig:
-    fatalx(U_("internal error: insufficient space for log line"));
+    free(evstr);
+    free(line);
+    sudo_warnx(U_("internal error, %s overflow"), __func__);
+    debug_return_str(NULL);
 }

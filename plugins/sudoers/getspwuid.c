@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2010-2012
+ * Copyright (c) 1996, 1998-2005, 2010-2012, 2014-2015
  *	Todd C. Miller <Todd.Miller@courtesan.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -24,23 +24,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
-#ifdef STDC_HEADERS
-# include <stdlib.h>
-# include <stddef.h>
-#else
-# ifdef HAVE_STDLIB_H
-#  include <stdlib.h>
-# endif
-#endif /* STDC_HEADERS */
+#include <stdlib.h>
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif /* HAVE_UNISTD_H */
+#include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
 #ifdef HAVE_GETSPNAM
@@ -55,14 +46,6 @@
 # endif /* __hpux */
 # include <prot.h>
 #endif /* HAVE_GETPRPWNAM */
-#ifdef HAVE_GETPWANAM
-# include <sys/label.h>
-# include <sys/audit.h>
-# include <pwdadj.h>
-#endif /* HAVE_GETPWANAM */
-#ifdef HAVE_GETAUTHUID
-# include <auth.h>
-#endif /* HAVE_GETAUTHUID */
 
 #include "sudoers.h"
 
@@ -81,18 +64,22 @@ char *
 sudo_getepw(const struct passwd *pw)
 {
     char *epw = NULL;
-    debug_decl(sudo_getepw, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_getepw, SUDOERS_DEBUG_AUTH)
 
     /* If there is a function to check for shadow enabled, use it... */
 #ifdef HAVE_ISCOMSEC
     if (!iscomsec())
 	goto done;
 #endif /* HAVE_ISCOMSEC */
-#ifdef HAVE_ISSECURE
-    if (!issecure())
-	goto done;
-#endif /* HAVE_ISSECURE */
 
+#ifdef HAVE_GETPWNAM_SHADOW
+    {
+	struct passwd *spw;
+
+	if ((spw = getpwnam_shadow(pw->pw_name)) != NULL)
+	    epw = spw->pw_passwd;
+    }
+#endif /* HAVE_GETPWNAM_SHADOW */
 #ifdef HAVE_GETPRPWNAM
     {
 	struct pr_passwd *spw;
@@ -113,42 +100,18 @@ sudo_getepw(const struct passwd *pw)
 	    epw = spw->sp_pwdp;
     }
 #endif /* HAVE_GETSPNAM */
-#ifdef HAVE_GETSPWUID
-    {
-	struct s_passwd *spw;
 
-	if ((spw = getspwuid(pw->pw_uid)) && spw->pw_passwd)
-	    epw = spw->pw_passwd;
-    }
-#endif /* HAVE_GETSPWUID */
-#ifdef HAVE_GETPWANAM
-    {
-	struct passwd_adjunct *spw;
-
-	if ((spw = getpwanam(pw->pw_name)) && spw->pwa_passwd)
-	    epw = spw->pwa_passwd;
-    }
-#endif /* HAVE_GETPWANAM */
-#ifdef HAVE_GETAUTHUID
-    {
-	AUTHORIZATION *spw;
-
-	if ((spw = getauthuid(pw->pw_uid)) && spw->a_password)
-	    epw = spw->a_password;
-    }
-#endif /* HAVE_GETAUTHUID */
-
-#if defined(HAVE_ISCOMSEC) || defined(HAVE_ISSECURE)
+#if defined(HAVE_ISCOMSEC)
 done:
 #endif
     /* If no shadow password, fall back on regular password. */
-    debug_return_str(estrdup(epw ? epw : pw->pw_passwd));
+    debug_return_str(strdup(epw ? epw : pw->pw_passwd));
 }
 
 void
 sudo_setspent(void)
 {
-    debug_decl(sudo_setspent, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_setspent, SUDOERS_DEBUG_AUTH)
 
 #ifdef HAVE_GETPRPWNAM
     setprpwent();
@@ -156,37 +119,19 @@ sudo_setspent(void)
 #ifdef HAVE_GETSPNAM
     setspent();
 #endif
-#ifdef HAVE_GETSPWUID
-    setspwent();
-#endif
-#ifdef HAVE_GETPWANAM
-    setpwaent();
-#endif
-#ifdef HAVE_GETAUTHUID
-    setauthent();
-#endif
     debug_return;
 }
 
 void
 sudo_endspent(void)
 {
-    debug_decl(sudo_endspent, SUDO_DEBUG_AUTH)
+    debug_decl(sudo_endspent, SUDOERS_DEBUG_AUTH)
 
 #ifdef HAVE_GETPRPWNAM
     endprpwent();
 #endif
 #ifdef HAVE_GETSPNAM
     endspent();
-#endif
-#ifdef HAVE_GETSPWUID
-    endspwent();
-#endif
-#ifdef HAVE_GETPWANAM
-    endpwaent();
-#endif
-#ifdef HAVE_GETAUTHUID
-    endauthent();
 #endif
     debug_return;
 }
