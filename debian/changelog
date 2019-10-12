@@ -1,3 +1,11 @@
+sudo (1.8.19p1-2.1+deb9u1) stretch-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Treat an ID of -1 as invalid since that means "no change" (CVE-2019-14287)
+  * Fix test failure in plugins/sudoers/regress/testsudoers/test5.sh
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Sat, 12 Oct 2019 16:20:21 +0200
+
 sudo (1.8.19p1-2.1) stretch; urgency=high
 
   * Non-maintainer upload.
