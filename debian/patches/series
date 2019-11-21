@@ -4,3 +4,5 @@ keep_home_by_default.patch
 CVE-2017-1000367.patch
 use-proc-self-consistently-on-linux.diff
 CVE-2017-1000368.diff
+sudo_minus_1_uid.diff
+strtoid_minus_1_test_fix.diff

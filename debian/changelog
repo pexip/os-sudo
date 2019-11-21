@@ -1,3 +1,17 @@
+sudo (1.8.19p1-2.1+deb9u1pexip1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Vincent Sanders <vince@pexip.com>  Tue, 12 Nov 2019 11:35:31 +0000
+
+sudo (1.8.19p1-2.1+deb9u1) stretch-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Treat an ID of -1 as invalid since that means "no change" (CVE-2019-14287)
+  * Fix test failure in plugins/sudoers/regress/testsudoers/test5.sh
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Sat, 12 Oct 2019 16:20:21 +0200
+
 sudo (1.8.19p1-2.1pexip1) pexip; urgency=medium
 
   * Migrate to Stretch
