@@ -5,9 +5,16 @@ Author: Todd C. Miller <Todd.Miller@sudo.ws>
 Reviewed-by: Salvatore Bonaccorso <carnil@debian.org>
 Last-Update: 2019-10-10
 
-[Salvatore Bonaccorso: Backport to 1.8.19p1 for context changes]
---- a/lib/util/regress/atofoo/atofoo_test.c
-+++ b/lib/util/regress/atofoo/atofoo_test.c
+diff -r fcd7a6d8330e lib/util/regress/atofoo/atofoo_test.c
+--- a/lib/util/regress/atofoo/atofoo_test.c	Fri Jan 11 13:31:15 2019 -0700
++++ b/lib/util/regress/atofoo/atofoo_test.c	Thu Oct 10 14:02:30 2019 -0600
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2014 Todd C. Miller <Todd.Miller@sudo.ws>
++ * Copyright (c) 2014-2019 Todd C. Miller <Todd.Miller@sudo.ws>
+  *
+  * Permission to use, copy, modify, and distribute this software for any
+  * purpose with or without fee is hereby granted, provided that the above
 @@ -24,6 +24,7 @@
  #else
  # include "compat/stdbool.h"
@@ -33,10 +40,10 @@ Last-Update: 2019-10-10
 +    { "-2147483649", 0, NULL, NULL, ERANGE },
 +    { "-2", -2, NULL, NULL, 0 },
  #if SIZEOF_ID_T != SIZEOF_LONG_LONG
--    { "-2", 4294967294U, NULL, NULL },
+-    { "-2", (id_t)4294967294U, NULL, NULL },
 +    { "-2", (id_t)4294967294U, NULL, NULL, 0 },
  #endif
--    { "4294967294", 4294967294U, NULL, NULL },
+-    { "4294967294", (id_t)4294967294U, NULL, NULL },
 -    { NULL, 0, NULL, NULL }
 +    { "4294967294", (id_t)4294967294U, NULL, NULL, 0 },
 +    { NULL, 0, NULL, NULL, 0 }
@@ -70,8 +77,9 @@ Last-Update: 2019-10-10
  	} else if (value != d->id) {
  	    sudo_warnx_nodebug("FAIL: %s != %u", d->idstr, (unsigned int)d->id);
  	    errors++;
---- a/plugins/sudoers/regress/testsudoers/test5.out.ok
-+++ b/plugins/sudoers/regress/testsudoers/test5.out.ok
+diff -r fcd7a6d8330e plugins/sudoers/regress/testsudoers/test5.out.ok
+--- a/plugins/sudoers/regress/testsudoers/test5.out.ok	Fri Jan 11 13:31:15 2019 -0700
++++ b/plugins/sudoers/regress/testsudoers/test5.out.ok	Thu Oct 10 14:02:30 2019 -0600
 @@ -4,7 +4,7 @@ Parse error in sudoers near line 1.
  Entries for user root:
  
@@ -81,8 +89,9 @@ Last-Update: 2019-10-10
  Parse error in sudoers near line 1.
  
  Entries for user root:
---- a/plugins/sudoers/regress/testsudoers/test5.sh
-+++ b/plugins/sudoers/regress/testsudoers/test5.sh
+diff -r fcd7a6d8330e plugins/sudoers/regress/testsudoers/test5.sh
+--- a/plugins/sudoers/regress/testsudoers/test5.sh	Fri Jan 11 13:31:15 2019 -0700
++++ b/plugins/sudoers/regress/testsudoers/test5.sh	Thu Oct 10 14:02:30 2019 -0600
 @@ -24,7 +24,7 @@ EOF
  
  # Test group writable

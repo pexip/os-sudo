@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2010-2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2008, 2010-2018 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -12,15 +12,17 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -28,15 +30,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
 # include "compat/stdbool.h"
 #endif /* HAVE_STDBOOL_H */
-#ifdef TIME_WITH_SYS_TIME
-# include <time.h>
-#endif
 
 #include "sudo_gettext.h"	/* must be included before sudo_compat.h */
 
@@ -224,24 +224,24 @@ sesh_sudoedit(int argc, char *argv[])
 	    }
 	}
 
-	if (fd_dst != -1) {
-	    if (!post) {
-		if (fd_src == -1 || fstat(fd_src, &sb) != 0)
-		    memset(&sb, 0, sizeof(sb));
-		/* Make mtime on temp file match src. */
-		mtim_get(&sb, times[0]);
-		times[1].tv_sec = times[0].tv_sec;
-		times[1].tv_nsec = times[0].tv_nsec;
-		if (futimens(fd_dst, times) == -1) {
-		    if (utimensat(AT_FDCWD, path_dst, times, 0) == -1)
-			sudo_warn("%s", path_dst);
-		}
+	if (!post) {
+	    if (fd_src == -1 || fstat(fd_src, &sb) != 0)
+		memset(&sb, 0, sizeof(sb));
+	    /* Make mtime on temp file match src. */
+	    mtim_get(&sb, times[0]);
+	    times[1].tv_sec = times[0].tv_sec;
+	    times[1].tv_nsec = times[0].tv_nsec;
+	    if (futimens(fd_dst, times) == -1) {
+		if (utimensat(AT_FDCWD, path_dst, times, 0) == -1)
+		    sudo_warn("%s", path_dst);
 	    }
-	    close(fd_dst);
 	}
-	if (fd_src != -1)
+	close(fd_dst);
+	fd_dst = -1;
+	if (fd_src != -1) {
 	    close(fd_src);
-	fd_dst = fd_src = -1;
+	    fd_src = -1;
+	}
     }
 
     ret = SESH_SUCCESS;

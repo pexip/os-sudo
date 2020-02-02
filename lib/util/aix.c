@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2010-2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2008, 2010-2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -12,6 +12,11 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -107,21 +112,14 @@ aix_setlimits(char *user)
 		continue;
 	    rlim.rlim_cur = val == -1 ? RLIM64_INFINITY : (rlim64_t)val * aix_limits[n].factor;
 
-	    /* Set hard limit as per table in /etc/security/limits. */
+	    /* Set default hard limit as per limits(4). */
 	    switch (aix_limits[n].resource) {
 		case RLIMIT_CPU:
 		case RLIMIT_FSIZE:
 		    rlim.rlim_max = rlim.rlim_cur;
 		    break;
 		case RLIMIT_STACK:
-#ifdef HAVE_SETRLIMIT64
-		    rlim.rlim_max = 8388608ULL * aix_limits[n].factor;
-#else
-		    rlim.rlim_max = RLIM_SAVED_MAX;
-#endif
-		    break;
-		case RLIMIT_NOFILE:
-		    rlim.rlim_max = 8196 * aix_limits[n].factor;
+		    rlim.rlim_max = 4194304UL * aix_limits[n].factor;
 		    break;
 		default:
 		    rlim.rlim_max = RLIM64_INFINITY;

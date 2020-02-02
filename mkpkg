@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Copyright (c) 2010-2015 Todd C. Miller <Todd.Miller@courtesan.com>
+# Copyright (c) 2010-2018 Todd C. Miller <Todd.Miller@sudo.ws>
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -91,13 +91,14 @@ top_srcdir=`dirname $0`
 : ${osversion="`$top_srcdir/pp --probe`"}
 test -n "$osversion" || exit 1
 osrelease=`echo "$osversion" | sed -e 's/^[^0-9]*//' -e 's/-.*$//'`
+: ${MAKE=make}
 
 # If using GNU make, set number of jobs
-if make --version 2>&1 | grep GNU >/dev/null; then
+if ${MAKE} --version 2>&1 | grep GNU >/dev/null; then
     NJOBS=0
     case "`uname`" in
 	Darwin)
-	    # Mac OS X
+	    # macOS
 	    NJOBS=`sysctl -n hw.ncpu`
 	    ;;
 	Linux)
@@ -113,6 +114,12 @@ if make --version 2>&1 | grep GNU >/dev/null; then
 		NJOBS=`/usr/sbin/psrinfo | wc -l`
 	    fi
 	    ;;
+	HP-UX)
+	    NJOBS=`sar -Mu 1 1 | awk 'END {print NR-5}'`
+	    ;;
+	AIX)
+	    NJOBS=`bindprocessor -q | awk '{print NF-4}'`
+	    ;;
     esac
     if [ $NJOBS -gt 1 ]; then
 	make_opts="-j$NJOBS"
@@ -122,6 +129,12 @@ fi
 # Choose compiler options by osversion if not cross-compiling.
 if [ "$crossbuild" = "false" ]; then
     case "$osversion" in
+	macos*)
+	    # Use clang on macOS if present
+	    if [ -z "$CC" -a -x /usr/bin/clang ]; then
+		CC=/usr/bin/clang; export CC
+	    fi
+	    ;;
 	sol[0-9]*)
 	    # Use the Sun Studio C compiler on Solaris if possible
 	    if [ -z "$CC" -a -x /usr/bin/cc ]; then
@@ -133,6 +146,10 @@ if [ "$crossbuild" = "false" ]; then
 	    ;;
     esac
 fi
+
+# Give configure a hint that we are building a package.
+# Some libc functions are only available on certain OS revisions.
+configure_opts="${configure_opts}${configure_opts+$tab}--enable-package-build"
 
 # Choose configure options by osversion.
 # We use the same configure options as vendor packages when possible.
@@ -163,7 +180,6 @@ case "$osversion" in
 		with_linux_audit=true
 		with_pam_login=true
 		with_sssd=true
-		with_sudo_ldap_conf=true
 		;;
 	esac
 
@@ -384,8 +400,8 @@ IFS="	$nl"
 set -- $configure_opts $extra_opts
 IFS="$OIFS"
 if [ -r Makefile ]; then
-    make $make_opts distclean
+    ${MAKE} $make_opts distclean
 fi
 $top_srcdir/configure "$@" || exit 1
-make $make_opts && make $make_opts PPFLAGS="$PPFLAGS" PPVARS="$PPVARS" package
+${MAKE} $make_opts && ${MAKE} $make_opts PPFLAGS="$PPFLAGS" PPVARS="$PPVARS" package
 test $debug -eq 0 && rm -rf destdir

@@ -2,10 +2,10 @@ Source: sudo
 Section: admin
 Priority: optional
 Maintainer: Bdale Garbee <bdale@gag.com>
-Build-Depends: debhelper (>= 10), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, autotools-dev, bison, flex, libaudit-dev [linux-any], mandoc
-Standards-Version: 3.9.8
-Vcs-Git: git://anonscm.debian.org/collab-maint/sudo.git
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=collab-maint/sudo.git
+Build-Depends: debhelper (>= 10), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], mandoc
+Standards-Version: 4.1.1
+Vcs-Git: https://salsa.debian.org/debian/sudo.git
+Vcs-Browser: https://salsa.debian.org/debian/sudo
 Homepage: http://www.sudo.ws/
 
 Package: sudo
@@ -33,5 +33,5 @@ Description: Provide limited super user privileges to specific users
  as few privileges as possible but still allow people to get their work done.
  .
  This version is built with LDAP support, which allows an equivalent of the
- sudoers database to be distributed via LDAP.  Authentication is still 
+ sudoers database to be distributed via LDAP.  Authentication is still
  performed via pam.

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1996, 1998-2005, 2008, 2009-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1996, 1998-2005, 2008, 2009-2018
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,8 +23,16 @@
 #define SUDO_COMPAT_H
 
 #include <stdio.h>
-#include <stdarg.h>
-#include <stddef.h>	/* for rsize_t */
+#if !defined(HAVE_VSNPRINTF) || !defined(HAVE_VASPRINTF) || \
+    !defined(HAVE_VSYSLOG) || defined(PREFER_PORTABLE_SNPRINTF)
+# include <stdarg.h>
+#endif
+#if !defined(HAVE_MEMSET_S) && !defined(rsize_t)
+# include <stddef.h>	/* for rsize_t */
+# ifdef HAVE_STRING_H
+#  include <string.h>	/* for rsize_t on AIX */
+# endif /* HAVE_STRING_H */
+#endif /* HAVE_MEMSET_S && rsize_t */
 
 /*
  * Macros and functions that may be missing on some operating systems.
@@ -164,6 +172,9 @@
 #ifndef _S_IFLNK
 # define _S_IFLNK		S_IFLNK
 #endif /* _S_IFLNK */
+#ifndef _S_IFIFO
+# define _S_IFIFO		S_IFIFO
+#endif /* _S_IFIFO */
 #ifndef S_ISREG
 # define S_ISREG(m)		(((m) & _S_IFMT) == _S_IFREG)
 #endif /* S_ISREG */
@@ -172,6 +183,9 @@
 #endif /* S_ISDIR */
 #ifndef S_ISLNK
 # define S_ISLNK(m)		(((m) & _S_IFMT) == _S_IFLNK)
+#endif /* S_ISLNK */
+#ifndef S_ISFIFO
+# define S_ISFIFO(m)		(((m) & _S_IFMT) == _S_IFIFO)
 #endif /* S_ISLNK */
 #ifndef S_ISTXT
 # define S_ISTXT		0001000
@@ -202,6 +216,11 @@
 # endif
 #endif
 
+/* For pipe2() emulation. */
+#if !defined(HAVE_PIPE2) && defined(O_NONBLOCK) && !defined(O_CLOEXEC)
+# define O_CLOEXEC	0x80000000
+#endif
+
 /*
  * BSD defines these in <sys/param.h> but we don't include that anymore.
  */
@@ -221,6 +240,13 @@
 #define ISSET(t, f)     ((t) & (f))
 
 /*
+ * Some systems define this in <sys/param.h> but we don't include that anymore.
+ */
+#ifndef howmany
+# define howmany(x, y)	(((x) + ((y) - 1)) / (y))
+#endif
+
+/*
  * Simple isblank() macro and function for systems without it.
  */
 #ifndef HAVE_ISBLANK
@@ -235,20 +261,6 @@ __dso_public int isblank(int);
 # define innetgr(n, h, u, d)	(_innetgr(n, h, u, d))
 # define HAVE_INNETGR 1
 #endif /* HAVE__INNETGR */
-
-/*
- * Add IRIX-like sigaction_t for those without it.
- * SA_RESTART is not required by POSIX; SunOS has SA_INTERRUPT instead.
- */
-#ifndef HAVE_SIGACTION_T
-typedef struct sigaction sigaction_t;
-#endif
-#ifndef SA_INTERRUPT
-# define SA_INTERRUPT	0
-#endif
-#ifndef SA_RESTART
-# define SA_RESTART	0
-#endif
 
 /*
  * The nitems macro may be defined in sys/param.h
@@ -266,7 +278,7 @@ typedef struct sigaction sigaction_t;
 #endif
 
 #if !defined(HAVE_KILLPG) && !defined(killpg)
-# define killpg(s)	kill(-(s))
+# define killpg(p, s)	kill(-(p), (s))
 #endif
 
 /*
@@ -388,13 +400,10 @@ __dso_public char *sudo_getcwd(char *, size_t size);
 # define getcwd(_a, _b) sudo_getcwd((_a), (_b))
 #endif /* PREFER_PORTABLE_GETCWD */
 #ifndef HAVE_GETGROUPLIST
-__dso_public int sudo_getgrouplist(const char *name, gid_t basegid, gid_t *groups, int *ngroupsp);
+__dso_public int sudo_getgrouplist(const char *name, GETGROUPS_T basegid, GETGROUPS_T *groups, int *ngroupsp);
 # undef getgrouplist
 # define getgrouplist(_a, _b, _c, _d) sudo_getgrouplist((_a), (_b), (_c), (_d))
 #endif /* GETGROUPLIST */
-#if defined(HAVE_GETGROUPLIST_2) && !HAVE_DECL_GETGROUPLIST_2
-int getgrouplist_2(const char *name, gid_t basegid, gid_t **groups);
-#endif /* HAVE_GETGROUPLIST_2 && !HAVE_DECL_GETGROUPLIST_2 */
 #ifndef HAVE_GETLINE
 __dso_public ssize_t sudo_getline(char **bufp, size_t *bufsizep, FILE *fp);
 # undef getline
@@ -468,6 +477,11 @@ __dso_public int sudo_mkstemps(char *path, int slen);
 # undef mkstemps
 # define mkstemps(_a, _b) sudo_mkstemps((_a), (_b))
 #endif /* !HAVE_MKDTEMP || !HAVE_MKSTEMPS */
+#ifndef HAVE_NANOSLEEP
+__dso_public int sudo_nanosleep(const struct timespec *timeout, struct timespec *remainder);
+#undef nanosleep
+# define nanosleep(_a, _b) sudo_nanosleep((_a), (_b))
+#endif
 #ifndef HAVE_PW_DUP
 __dso_public struct passwd *sudo_pw_dup(const struct passwd *pw);
 # undef pw_dup
@@ -508,5 +522,10 @@ __dso_public void sudo_vsyslog(int pri, const char *fmt, va_list ap);
 # undef vsyslog
 # define vsyslog(_a, _b, _c) sudo_vsyslog((_a), (_b), (_c))
 #endif /* HAVE_VSYSLOG */
+#ifndef HAVE_PIPE2
+__dso_public int sudo_pipe2(int fildes[2], int flags);
+# undef pipe2
+# define pipe2(_a, _b) sudo_pipe2((_a), (_b))
+#endif /* HAVE_PIPE2 */
 
 #endif /* SUDO_COMPAT_H */

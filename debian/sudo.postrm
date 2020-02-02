@@ -3,6 +3,7 @@
 case "$1" in
   purge)
 	rm -rf /var/lib/sudo
+	rm -rf /run/sudo
   ;;
 
   remove|upgrade|deconfigure)

@@ -11,7 +11,7 @@ CPPFLAGS = `dpkg-buildflags --get CPPFLAGS`
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 DEB_HOST_ARCH_OS ?= $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
 ifeq ($(DEB_HOST_ARCH_OS),linux)
-  configure_args += --with-selinux --with-linux-audit
+  configure_args += --with-selinux --with-linux-audit --enable-tmpfiles.d=yes
 endif
 
 reconf-stamp:
@@ -27,10 +27,10 @@ configure-stamp: reconf-stamp
 	cp -f /usr/share/misc/config.guess config.guess
 
 	# simple version
-	mkdir -p build-simple
-	cd build-simple && NROFFPROG=/usr/bin/nroff CFLAGS="$(CFLAGS)" \
-	    CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(CURDIR)/configure \
-		--prefix=/usr -v \
+	NROFFPROG=/usr/bin/nroff CFLAGS="$(CFLAGS)" \
+	    CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	    dh_auto_configure --builddirectory=build-simple -- \
+		-v \
 		--with-all-insults \
 		--with-pam \
 		--with-fqdn \
@@ -44,17 +44,16 @@ configure-stamp: reconf-stamp
 		--with-passprompt="[sudo] password for %p: " \
 		--disable-root-mailer \
 		--with-sendmail=/usr/sbin/sendmail \
-		--with-rundir=/var/lib/sudo \
-		--mandir=/usr/share/man \
+		--with-rundir=/run/sudo \
 		--libexecdir=/usr/lib/sudo \
 		--with-sssd --with-sssd-lib=/usr/lib/$(DEB_HOST_MULTIARCH) \
 		$(configure_args)
 
 	# LDAP version
-	mkdir -p build-ldap
-	cd build-ldap && NROFFPROG=/usr/bin/nroff CFLAGS="$(CFLAGS)" \
-	    CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" $(CURDIR)/configure \
-		--prefix=/usr -v \
+	NROFFPROG=/usr/bin/nroff CFLAGS="$(CFLAGS)" \
+	    CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	    dh_auto_configure --builddirectory=build-ldap -- \
+		-v \
 		--with-all-insults \
 		--with-pam \
 		--with-ldap \
@@ -70,10 +69,10 @@ configure-stamp: reconf-stamp
 		--disable-root-mailer \
 		--disable-setresuid \
 		--with-sendmail=/usr/sbin/sendmail \
-		--with-rundir=/var/lib/sudo \
+		--with-rundir=/run/sudo \
 		--with-ldap-conf-file=/etc/sudo-ldap.conf \
-		--mandir=/usr/share/man \
 		--libexecdir=/usr/lib/sudo \
+		--with-sssd --with-sssd-lib=/usr/lib/$(DEB_HOST_MULTIARCH) \
 		$(configure_args)
 
 	touch configure-stamp
@@ -87,7 +86,9 @@ build-stamp: configure-stamp
 	$(MAKE) -C build-simple
 	$(MAKE) -C build-ldap
 
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
 	$(MAKE) -C build-simple check
+endif
 
 	touch build-stamp
 
@@ -112,6 +113,16 @@ install: build-stamp
 	rm -f	debian/sudo*/etc/sudoers \
 		debian/sudo*/usr/share/doc/sudo/LICENSE* \
 		debian/sudo*/usr/share/doc/sudo/ChangeLog
+
+	# provide upstream sudoers.dist as an alternate example
+	mv debian/sudo/etc/sudoers.dist \
+		debian/sudo/usr/share/doc/sudo/examples/sudoers.dist
+	mv debian/sudo-ldap/etc/sudoers.dist \
+		debian/sudo-ldap/usr/share/doc/sudo-ldap/examples/sudoers.dist
+
+	# /run/sudo directory is created at boot time and shouldn't be in the
+	# package
+	rm -rf debian/sudo*/run
 
 	# move upstream-installed docs to the right place for ldap package
 	mv	debian/sudo-ldap/usr/share/doc/sudo/* \
@@ -139,10 +150,11 @@ install: build-stamp
 	install -o root -g root -m 0440 debian/README \
 		debian/sudo-ldap/etc/sudoers.d/README
 
-	install -o root -g root -m 0644 debian/sudo.service \
-		debian/sudo/lib/systemd/system/sudo.service
-	install -o root -g root -m 0644 debian/sudo.service \
-		debian/sudo-ldap/lib/systemd/system/sudo.service
+	# we don't want the initscript to run, the creation of the rundir and
+	# the cleanup the stamp files is now done by tmpfiles when using
+	# systemd
+	ln -s /dev/null debian/sudo/lib/systemd/system/sudo.service
+	ln -s /dev/null debian/sudo-ldap/lib/systemd/system/sudo.service
 
 binary-indep: build install
 
@@ -154,7 +166,7 @@ binary-arch: build install
 	dh_installinit -psudo-ldap --name=sudo-ldap
 	dh_installman -A
 	dh_installinfo -A
-	dh_installchangelogs ChangeLog 
+	dh_installchangelogs ChangeLog
 	# clear dependency_libs field in .la files
 	sed -i "/dependency_libs/ s/'.*'/''/" `find . -name '*.la'`
 	dh_strip

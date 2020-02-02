@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2014 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -83,9 +83,9 @@ static struct strtoid_data {
     { "10", 10, NULL, NULL },
     { "-2", -2, NULL, NULL },
 #if SIZEOF_ID_T != SIZEOF_LONG_LONG
-    { "-2", 4294967294U, NULL, NULL },
+    { "-2", (id_t)4294967294U, NULL, NULL },
 #endif
-    { "4294967294", 4294967294U, NULL, NULL },
+    { "4294967294", (id_t)4294967294U, NULL, NULL },
     { NULL, 0, NULL, NULL }
 };
 
@@ -128,7 +128,7 @@ static struct strtomode_data {
     { "755", 0755 },
     { "007", 007 },
     { "7", 7 },
-    { "8", -1 },
+    { "8", (mode_t)-1 },
     { NULL, 0 }
 };
 

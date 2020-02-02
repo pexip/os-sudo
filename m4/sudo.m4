@@ -1,7 +1,7 @@
 dnl Local m4 macros for autoconf (used by sudo)
 dnl
 dnl Copyright (c) 1994-1996, 1998-2005, 2007-2015
-dnl	Todd C. Miller <Todd.Miller@courtesan.com>
+dnl	Todd C. Miller <Todd.Miller@sudo.ws>
 dnl
 dnl XXX - should cache values in all cases!!!
 dnl
@@ -108,7 +108,7 @@ dnl
 AC_DEFUN([SUDO_RUNDIR], [AC_MSG_CHECKING(for sudo run dir location)
 rundir="$with_rundir"
 if test -z "$rundir"; then
-    for d in /var/run /var/db /var/lib /var/adm /usr/adm; do
+    for d in /run /var/run /var/db /var/lib /var/adm /usr/adm; do
 	if test -d "$d"; then
 	    rundir="$d/sudo"
 	    break
@@ -266,6 +266,26 @@ int putenv(const char *string) {return 0;}], [])],
 ])
 
 dnl
+dnl check whether au_close() takes 3 or 4 arguments
+dnl
+AC_DEFUN([SUDO_FUNC_AU_CLOSE_SOLARIS11],
+[AC_CACHE_CHECK([whether au_close() takes 4 arguments],
+sudo_cv_func_au_close_solaris11,
+[AC_COMPILE_IFELSE([AC_LANG_PROGRAM([AC_INCLUDES_DEFAULT
+#include <bsm/audit.h>
+#include <bsm/libbsm.h>
+#include <bsm/audit_uevents.h>
+
+int au_close(int d, int keep, au_event_t event, au_emod_t emod) {return 0;}], [])],
+    [sudo_cv_func_au_close_solaris11=yes],
+    [sudo_cv_func_au_close_solaris11=no])
+  ])
+  if test $sudo_cv_func_au_close_solaris11 = yes; then
+    AC_DEFINE(HAVE_AU_CLOSE_SOLARIS11, 1, [Define to 1 if the `au_close' functions takes 4 arguments like Solaris 11.])
+  fi
+])
+
+dnl
 dnl Check if the data argument for the sha2 functions is void * or u_char *
 dnl
 AC_DEFUN([SUDO_FUNC_SHA2_VOID_PTR],
@@ -339,6 +359,69 @@ main() {
 rm -f conftestdata
 AC_MSG_RESULT($sudo_cv_uid_t_len)
 AC_DEFINE_UNQUOTED(MAX_UID_T_LEN, $sudo_cv_uid_t_len, [Define to the max length of a uid_t in string context (excluding the NUL).])
+])
+
+dnl
+dnl There are three different utmp variants we need to check for.
+dnl SUDO_CHECK_UTMP_MEMBERS(utmp_type)
+dnl
+AC_DEFUN([SUDO_CHECK_UTMP_MEMBERS], [
+    dnl
+    dnl Check for utmp/utmpx/utmps struct members.
+    dnl
+    AC_CHECK_MEMBER([struct $1.ut_id], [
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_ID, 1, [Define to 1 if `ut_id' is a member of `struct utmp'.])
+    ], [], [
+#	include <sys/types.h>
+#	include <$1.h>
+    ])
+    AC_CHECK_MEMBER([struct $1.ut_pid], [
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_PID, 1, [Define to 1 if `ut_pid' is a member of `struct utmp'.])
+    ], [], [
+#	include <sys/types.h>
+#	include <$1.h>
+    ])
+    AC_CHECK_MEMBER([struct $1.ut_tv], [
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_TV, 1, [Define to 1 if `ut_tv' is a member of `struct utmp'.])
+    ], [], [
+#	include <sys/types.h>
+#	include <$1.h>
+    ])
+    AC_CHECK_MEMBER([struct $1.ut_type], [
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_TYPE, 1, [Define to 1 if `ut_type' is a member of `struct utmp'.])
+    ], [], [
+#	include <sys/types.h>
+#	include <$1.h>
+    ])
+    dnl
+    dnl Older struct utmp has ut_name instead of ut_user
+    dnl
+    if test "$1" = "utmp"; then
+	AC_CHECK_MEMBERS([struct utmp.ut_user], [], [], [
+#	include <sys/types.h>
+#	include <$1.h>
+	])
+    fi
+    dnl
+    dnl Check for ut_exit.__e_termination first, then ut_exit.e_termination
+    dnl We need to have already defined _GNU_SOURCE on glibc which only has
+    dnl __e_termination visible when _GNU_SOURCE is *not* defined.
+    dnl
+    AC_CHECK_MEMBER([struct $1.ut_exit.__e_termination], [
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_EXIT, 1, [Define to 1 if `ut_exit' is a member of `struct utmp'.])
+	AC_DEFINE(HAVE_STRUCT_UTMP_UT_EXIT___E_TERMINATION, 1, [Define to 1 if `ut_exit.__e_termination' is a member of `struct utmp'.])
+    ], [
+	AC_CHECK_MEMBER([struct $1.ut_exit.e_termination], [
+	    AC_DEFINE(HAVE_STRUCT_UTMP_UT_EXIT, 1, [Define to 1 if `ut_exit' is a member of `struct utmp'.])
+	    AC_DEFINE(HAVE_STRUCT_UTMP_UT_EXIT_E_TERMINATION, 1, [Define to 1 if `ut_exit.e_termination' is a member of `struct utmp'.])
+	], [], [
+#	    include <sys/types.h>
+#	    include <$1.h>
+	])
+    ], [
+#	include <sys/types.h>
+#	include <$1.h>
+    ])
 ])
 
 dnl

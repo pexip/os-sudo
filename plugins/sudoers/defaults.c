@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1999-2005, 2007-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1999-2005, 2007-2018
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,6 +19,11 @@
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
  */
 
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+ */
+
 #include <config.h>
 
 #include <sys/types.h>
@@ -34,9 +39,9 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <ctype.h>
+#include <syslog.h>
 
 #include "sudoers.h"
-#include "parse.h"
 #include <gram.h>
 
 /*
@@ -79,6 +84,7 @@ static struct strmap priorities[] = {
 };
 
 static struct early_default early_defaults[] = {
+    { I_IGNORE_UNKNOWN_DEFAULTS },
 #ifdef FQDN
     { I_FQDN, true },
 #else
@@ -100,9 +106,10 @@ static bool store_mode(const char *str, union sudo_defs_val *sd_un);
 static int  store_str(const char *str, union sudo_defs_val *sd_un);
 static bool store_syslogfac(const char *str, union sudo_defs_val *sd_un);
 static bool store_syslogpri(const char *str, union sudo_defs_val *sd_un);
+static bool store_timeout(const char *str, union sudo_defs_val *sd_un);
 static bool store_tuple(const char *str, union sudo_defs_val *sd_un, struct def_values *tuple_vals);
 static bool store_uint(const char *str, union sudo_defs_val *sd_un);
-static bool store_float(const char *str, union sudo_defs_val *sd_un);
+static bool store_timespec(const char *str, union sudo_defs_val *sd_un);
 static bool list_op(const char *str, size_t, union sudo_defs_val *sd_un, enum list_ops op);
 static const char *logfac2str(int);
 static const char *logpri2str(int);
@@ -160,10 +167,14 @@ dump_defaults(void)
 		    sudo_printf(SUDO_CONV_INFO_MSG, desc, cur->sd_un.uival);
 		    sudo_printf(SUDO_CONV_INFO_MSG, "\n");
 		    break;
-		case T_FLOAT:
-		    sudo_printf(SUDO_CONV_INFO_MSG, desc, cur->sd_un.fval);
+		case T_TIMESPEC: {
+		    /* display timespec in minutes as a double */
+		    double d = cur->sd_un.tspec.tv_sec +
+			(cur->sd_un.tspec.tv_nsec / 1000000000.0);
+		    sudo_printf(SUDO_CONV_INFO_MSG, desc, d / 60.0);
 		    sudo_printf(SUDO_CONV_INFO_MSG, "\n");
 		    break;
+		}
 		case T_MODE:
 		    sudo_printf(SUDO_CONV_INFO_MSG, desc, cur->sd_un.mode);
 		    sudo_printf(SUDO_CONV_INFO_MSG, "\n");
@@ -175,6 +186,13 @@ dump_defaults(void)
 			    sudo_printf(SUDO_CONV_INFO_MSG,
 				"\t%s\n", item->value);
 			}
+		    }
+		    break;
+		case T_TIMEOUT:
+		    if (cur->sd_un.ival) {
+			sudo_printf(SUDO_CONV_INFO_MSG, desc,
+			    cur->sd_un.ival);
+			sudo_printf(SUDO_CONV_INFO_MSG, "\n");
 		    }
 		    break;
 		case T_TUPLE:
@@ -206,7 +224,7 @@ find_default(const char *name, const char *file, int lineno, bool quiet)
 	if (strcmp(name, sudo_defs_table[i].name) == 0)
 	    debug_return_int(i);
     }
-    if (!quiet) {
+    if (!quiet && !def_ignore_unknown_defaults) {
 	if (lineno > 0) {
 	    sudo_warnx(U_("%s:%d unknown defaults entry \"%s\""),
 		file, lineno, name);
@@ -229,19 +247,40 @@ parse_default_entry(struct sudo_defs_types *def, const char *val, int op,
     int rc;
     debug_decl(parse_default_entry, SUDOERS_DEBUG_DEFAULTS)
 
-    if (val == NULL && !ISSET(def->type, T_FLAG)) {
-	/* Check for bogus boolean usage or missing value if non-boolean. */
-	if (!ISSET(def->type, T_BOOL) || op != false) {
-	    if (!quiet) {
-		if (lineno > 0) {
-		    sudo_warnx(U_("%s:%d no value specified for \"%s\""),
-			file, lineno, def->name);
-		} else {
-		    sudo_warnx(U_("%s: no value specified for \"%s\""),
-			file, def->name);
-		}
+    sudo_debug_printf(SUDO_DEBUG_INFO, "%s: %s:%d %s=%s op=%d",
+	__func__, file, lineno, def->name, val ? val : "", op);
+
+    /*
+     * If no value specified, the boolean flag must be set for non-flags.
+     * Only flags and tuples support boolean "true".
+     */
+    if (val == NULL) {
+	switch (def->type & T_MASK) {
+	case T_FLAG:
+	    break;
+	case T_TUPLE:
+	    if (ISSET(def->type, T_BOOL))
+		break;
+	    /* FALLTHROUGH */
+	case T_LOGFAC:
+	    if (op == true) {
+		/* Use default syslog facility if none specified. */
+		val = LOGFAC;
 	    }
-	    debug_return_bool(false);
+	    break;
+	default:
+	    if (!ISSET(def->type, T_BOOL) || op != false) {
+		if (!quiet) {
+		    if (lineno > 0) {
+			sudo_warnx(U_("%s:%d no value specified for \"%s\""),
+			    file, lineno, def->name);
+		    } else {
+			sudo_warnx(U_("%s: no value specified for \"%s\""),
+			    file, def->name);
+		    }
+		}
+		debug_return_bool(false);
+	    }
 	}
     }
 
@@ -274,9 +313,6 @@ parse_default_entry(struct sudo_defs_types *def, const char *val, int op,
 	case T_UINT:
 	    rc = store_uint(val, sd_un);
 	    break;
-	case T_FLOAT:
-	    rc = store_float(val, sd_un);
-	    break;
 	case T_MODE:
 	    rc = store_mode(val, sd_un);
 	    break;
@@ -300,8 +336,14 @@ parse_default_entry(struct sudo_defs_types *def, const char *val, int op,
 	case T_LIST:
 	    rc = store_list(val, sd_un, op);
 	    break;
+	case T_TIMEOUT:
+	    rc = store_timeout(val, sd_un);
+	    break;
 	case T_TUPLE:
 	    rc = store_tuple(val, sd_un, def->values);
+	    break;
+	case T_TIMESPEC:
+	    rc = store_timespec(val, sd_un);
 	    break;
 	default:
 	    if (!quiet) {
@@ -419,7 +461,7 @@ run_early_defaults(void)
 }
 
 static void
-free_default(int type, union sudo_defs_val *sd_un)
+free_defs_val(int type, union sudo_defs_val *sd_un)
 {
     switch (type & T_MASK) {
 	case T_STR:
@@ -446,7 +488,7 @@ init_defaults(void)
     /* Clear any old settings. */
     if (!firsttime) {
 	for (def = sudo_defs_table; def->name != NULL; def++)
-	    free_default(def->type, &def->sd_un);
+	    free_defs_val(def->type, &def->sd_un);
     }
 
     /* First initialize the flags. */
@@ -467,9 +509,6 @@ init_defaults(void)
 #endif
 #ifdef SEND_MAIL_WHEN_NOT_OK
     def_mail_no_perms = true;
-#endif
-#ifndef NO_TTY_TICKETS
-    def_tty_tickets = true;
 #endif
 #ifndef NO_LECTURE
     def_lecture = once;
@@ -504,6 +543,7 @@ init_defaults(void)
 #ifdef UMASK_OVERRIDE
     def_umask_override = true;
 #endif
+    def_timestamp_type = TIMESTAMP_TYPE;
     if ((def_iolog_file = strdup("%{seq}")) == NULL)
 	goto oom;
     if ((def_iolog_dir = strdup(_PATH_SUDO_IO_LOGDIR)) == NULL)
@@ -533,6 +573,7 @@ init_defaults(void)
     def_netgroup_tuple = false;
     def_sudoedit_checkdir = true;
     def_iolog_mode = S_IRUSR|S_IWUSR;
+    def_fdexec = digest_only;
 
     /* Syslog options need special care since they both strings and ints */
 #if (LOGGING & SLOG_SYSLOG)
@@ -552,8 +593,8 @@ init_defaults(void)
     def_umask = ACCESSPERMS;
 #endif
     def_loglinelen = MAXLOGFILELEN;
-    def_timestamp_timeout = TIMEOUT;
-    def_passwd_timeout = PASSWORD_TIMEOUT;
+    def_timestamp_timeout.tv_sec = TIMEOUT * 60;
+    def_passwd_timeout.tv_sec = PASSWORD_TIMEOUT * 60;
     def_passwd_tries = TRIES_FOR_PASSWORD;
 #ifdef HAVE_ZLIB_H
     def_compress_io = true;
@@ -600,6 +641,8 @@ init_defaults(void)
     def_set_utmp = true;
     def_pam_setcred = true;
     def_syslog_maxlen = MAXSYSLOGLEN;
+    def_case_insensitive_user = true;
+    def_case_insensitive_group = true;
 
     /* Reset the locale. */
     if (!firsttime) {
@@ -658,7 +701,8 @@ default_type_matches(struct defaults *d, int what)
  * Returns true if it matches, else false.
  */
 static bool
-default_binding_matches(struct defaults *d, int what)
+default_binding_matches(struct sudoers_parse_tree *parse_tree,
+    struct defaults *d, int what)
 {
     debug_decl(default_binding_matches, SUDOERS_DEBUG_DEFAULTS)
 
@@ -667,19 +711,19 @@ default_binding_matches(struct defaults *d, int what)
 	debug_return_bool(true);
 	break;
     case DEFAULTS_USER:
-	if (userlist_matches(sudo_user.pw, d->binding) == ALLOW)
+	if (userlist_matches(parse_tree, sudo_user.pw, d->binding) == ALLOW)
 	    debug_return_bool(true);
 	break;
     case DEFAULTS_RUNAS:
-	if (runaslist_matches(d->binding, NULL, NULL, NULL) == ALLOW)
+	if (runaslist_matches(parse_tree, d->binding, NULL, NULL, NULL) == ALLOW)
 	    debug_return_bool(true);
 	break;
     case DEFAULTS_HOST:
-	if (hostlist_matches(sudo_user.pw, d->binding) == ALLOW)
+	if (hostlist_matches(parse_tree, sudo_user.pw, d->binding) == ALLOW)
 	    debug_return_bool(true);
 	break;
     case DEFAULTS_CMND:
-	if (cmndlist_matches(d->binding) == ALLOW)
+	if (cmndlist_matches(parse_tree, d->binding) == ALLOW)
 	    debug_return_bool(true);
 	break;
     }
@@ -687,11 +731,12 @@ default_binding_matches(struct defaults *d, int what)
 }
 
 /*
- * Update the defaults based on what was set by sudoers.
+ * Update the global defaults based on the given defaults list.
  * Pass in an OR'd list of which default types to update.
  */
 bool
-update_defaults(int what, bool quiet)
+update_defaults(struct sudoers_parse_tree *parse_tree,
+    struct defaults_list *defs, int what, bool quiet)
 {
     struct defaults *d;
     bool ret = true;
@@ -700,17 +745,21 @@ update_defaults(int what, bool quiet)
     sudo_debug_printf(SUDO_DEBUG_INFO|SUDO_DEBUG_LINENO,
 	"what: 0x%02x", what);
 
+    /* If no defaults list specified, use the global one in the parse tree. */
+    if (defs == NULL)
+	defs = &parse_tree->defaults;
+
     /*
      * First apply Defaults values marked as early.
      */
-    TAILQ_FOREACH(d, &defaults, entries) {
+    TAILQ_FOREACH(d, defs, entries) {
 	struct early_default *early = is_early_default(d->var);
 	if (early == NULL)
 	    continue;
 
 	/* Defaults type and binding must match. */
 	if (!default_type_matches(d, what) ||
-	    !default_binding_matches(d, what))
+	    !default_binding_matches(parse_tree, d, what))
 	    continue;
 
 	/* Copy the value to sudo_defs_table and mark as early. */
@@ -725,14 +774,14 @@ update_defaults(int what, bool quiet)
     /*
      * Then set the rest of the defaults.
      */
-    TAILQ_FOREACH(d, &defaults, entries) {
+    TAILQ_FOREACH(d, defs, entries) {
 	/* Skip Defaults marked as early, we already did them. */
 	if (is_early_default(d->var))
 	    continue;
 
 	/* Defaults type and binding must match. */
 	if (!default_type_matches(d, what) ||
-	    !default_binding_matches(d, what))
+	    !default_binding_matches(parse_tree, d, what))
 	    continue;
 
 	/* Copy the value to sudo_defs_table and run callback (if any) */
@@ -746,14 +795,14 @@ update_defaults(int what, bool quiet)
  * Check all defaults entries without actually setting them.
  */
 bool
-check_defaults(bool quiet)
+check_defaults(struct sudoers_parse_tree *parse_tree, bool quiet)
 {
     struct defaults *d;
     bool ret = true;
     int idx;
     debug_decl(check_defaults, SUDOERS_DEBUG_DEFAULTS)
 
-    TAILQ_FOREACH(d, &defaults, entries) {
+    TAILQ_FOREACH(d, &parse_tree->defaults, entries) {
 	idx = find_default(d->var, d->file, d->lineno, quiet);
 	if (idx != -1) {
 	    struct sudo_defs_types *def = &sudo_defs_table[idx];
@@ -761,7 +810,7 @@ check_defaults(bool quiet)
 	    memset(&sd_un, 0, sizeof(sd_un));
 	    if (parse_default_entry(def, d->val, d->op, &sd_un, d->file,
 		d->lineno, quiet)) {
-		free_default(def->type, &sd_un);
+		free_defs_val(def->type, &sd_un);
 		continue;
 	    }
 	}
@@ -815,20 +864,52 @@ store_uint(const char *str, union sudo_defs_val *sd_un)
 }
 
 static bool
-store_float(const char *str, union sudo_defs_val *sd_un)
+store_timespec(const char *str, union sudo_defs_val *sd_un)
 {
-    char *endp;
-    double d;
-    debug_decl(store_float, SUDOERS_DEBUG_DEFAULTS)
+    struct timespec ts;
+    char sign = '+';
+    int i;
+    debug_decl(store_timespec, SUDOERS_DEBUG_DEFAULTS)
 
-    if (str == NULL) {
-	sd_un->fval = 0.0;
+    sudo_timespecclear(&ts);
+    if (str != NULL) {
+	/* Convert from minutes to timespec. */
+	if (*str == '+' || *str == '-')
+	    sign = *str++;
+	while (*str != '\0' && *str != '.') {
+		if (!isdigit((unsigned char)*str))
+		    debug_return_bool(false);	/* invalid number */
+		if (ts.tv_sec > TIME_T_MAX / 10)
+		    debug_return_bool(false);	/* overflow */
+		ts.tv_sec *= 10;
+		ts.tv_sec += *str++ - '0';
+	}
+	if (*str++ == '.') {
+	    /* Convert optional fractional component to nanosecs. */
+	    for (i = 100000000; i > 0; i /= 10) {
+		if (*str == '\0')
+		    break;
+		if (!isdigit((unsigned char)*str))
+		    debug_return_bool(false);	/* invalid number */
+		ts.tv_nsec += i * (*str++ - '0');
+	    }
+	}
+	/* Convert from minutes to seconds. */
+	if (ts.tv_sec > TIME_T_MAX / 60)
+	    debug_return_bool(false);	/* overflow */
+	ts.tv_sec *= 60;
+	ts.tv_nsec *= 60;
+	while (ts.tv_nsec >= 1000000000) {
+	    ts.tv_sec++;
+	    ts.tv_nsec -= 1000000000;
+	}
+    }
+    if (sign == '-') {
+	sd_un->tspec.tv_sec = -ts.tv_sec;
+	sd_un->tspec.tv_nsec = -ts.tv_nsec;
     } else {
-	d = strtod(str, &endp);
-	if (*endp != '\0')
-	    debug_return_bool(false);
-	/* XXX - should check against HUGE_VAL */
-	sd_un->fval = d;
+	sd_un->tspec.tv_sec = ts.tv_sec;
+	sd_un->tspec.tv_nsec = ts.tv_nsec;
     }
     debug_return_bool(true);
 }
@@ -980,6 +1061,25 @@ store_mode(const char *str, union sudo_defs_val *sd_un)
 	    debug_return_bool(false);
 	}
 	sd_un->mode = mode;
+    }
+    debug_return_bool(true);
+}
+
+static bool
+store_timeout(const char *str, union sudo_defs_val *sd_un)
+{
+    debug_decl(store_mode, SUDOERS_DEBUG_DEFAULTS)
+
+    if (str == NULL) {
+	sd_un->ival = 0;
+    } else {
+	int seconds = parse_timeout(str);
+	if (seconds == -1) {
+	    sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_ERRNO|SUDO_DEBUG_LINENO,
+		"%s", str);
+	    debug_return_bool(false);
+	}
+	sd_un->ival = seconds;
     }
     debug_return_bool(true);
 }
