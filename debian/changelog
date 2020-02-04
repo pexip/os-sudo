@@ -1,3 +1,17 @@
+sudo (1.8.19p1-2.1+deb9u2pexip1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 04 Feb 2020 11:36:39 +0000
+
+sudo (1.8.19p1-2.1+deb9u2) stretch-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Fix a buffer overflow when pwfeedback is enabled and input is a not a tty
+    (CVE-2019-18634) (Closes: #950371)
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Fri, 31 Jan 2020 22:10:55 +0100
+
 sudo (1.8.19p1-2.1+deb9u1pexip1) unstable; urgency=medium
 
   * new upstream version
