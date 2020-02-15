@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2016-2018 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,13 +14,23 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+ */
+
 #include <config.h>
 
 #include <sys/types.h>
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
+#ifdef HAVE_STDBOOL_H
+# include <stdbool.h>
+#else
+# include "compat/stdbool.h"
+#endif
 #ifdef HAVE_STRING_H
 # include <string.h>
 #endif /* HAVE_STRING_H */
@@ -66,6 +76,7 @@ rcstr_alloc(size_t len)
 
     rcs->refcnt = 1;
     rcs->str[0] = '\0';
+    /* cppcheck-suppress memleak */
     debug_return_ptr(rcs->str);
 }
 
@@ -78,7 +89,7 @@ rcstr_addref(const char *s)
     if (s == NULL)
 	debug_return_ptr(NULL);
 
-    rcs = __containerof(s, struct rcstr, str);
+    rcs = __containerof((const void *)s, struct rcstr, str);
     rcs->refcnt++;
     debug_return_ptr(rcs->str);
 }
@@ -90,7 +101,7 @@ rcstr_delref(const char *s)
     debug_decl(rcstr_dup, SUDOERS_DEBUG_UTIL)
 
     if (s != NULL) {
-	rcs = __containerof(s, struct rcstr, str);
+	rcs = __containerof((const void *)s, struct rcstr, str);
 	if (--rcs->refcnt == 0) {
 	    rcs->str[0] = '\0';
 	    free(rcs);

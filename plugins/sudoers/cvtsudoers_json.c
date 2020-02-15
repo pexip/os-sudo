@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2013-2018 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -12,6 +12,11 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -27,10 +32,11 @@
 #endif /* HAVE_STRINGS_H */
 #include <unistd.h>
 #include <stdarg.h>
+#include <time.h>
 #include <ctype.h>
 
 #include "sudoers.h"
-#include "parse.h"
+#include "cvtsudoers.h"
 #include <gram.h>
 
 /*
@@ -224,15 +230,15 @@ printstr_json(FILE *fp, const char *pre, const char *str, const char *post,
  * that closes the object.
  */
 static void
-print_command_json(FILE *fp, struct member *m, int indent, bool last_one)
+print_command_json(FILE *fp, const char *name, int type, bool negated, int indent, bool last_one)
 {
-    struct sudo_command *c = (struct sudo_command *)m->name;
+    struct sudo_command *c = (struct sudo_command *)name;
     struct json_value value;
     const char *digest_name;
     debug_decl(print_command_json, SUDOERS_DEBUG_UTIL)
 
     printstr_json(fp, "{", NULL, NULL, indent);
-    if (m->negated || c->digest != NULL) {
+    if (negated || c->digest != NULL) {
 	putc('\n', fp);
 	indent += 4;
     } else {
@@ -254,30 +260,14 @@ print_command_json(FILE *fp, struct member *m, int indent, bool last_one)
     /* Optional digest. */
     if (c->digest != NULL) {
 	fputs(",\n", fp);
-	switch (c->digest->digest_type) {
-	case SUDO_DIGEST_SHA224:
-	    digest_name = "sha224";
-	    break;
-	case SUDO_DIGEST_SHA256:
-	    digest_name = "sha256";
-	    break;
-	case SUDO_DIGEST_SHA384:
-	    digest_name = "sha384";
-	    break;
-	case SUDO_DIGEST_SHA512:
-	    digest_name = "sha512";
-	    break;
-	default:
-	    digest_name = "invalid digest";
-	    break;
-	}
+	digest_name = digest_type_to_name(c->digest->digest_type);
 	value.type = JSON_STRING;
 	value.u.string = c->digest->digest_str;
 	print_pair_json(fp, NULL, digest_name, &value, NULL, indent);
     }
 
     /* Command may be negated. */
-    if (m->negated) {
+    if (negated) {
 	fputs(",\n", fp);
 	value.type = JSON_BOOL;
 	value.u.boolean = true;
@@ -345,30 +335,45 @@ defaults_to_word_type(int defaults_type)
  * that closes the object.
  */
 static void
-print_member_json(FILE *fp, struct member *m, enum word_type word_type,
-    bool last_one, int indent)
+print_member_json_int(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    char *name, int type, bool negated, enum word_type word_type,
+    bool last_one, int indent, bool expand_aliases)
 {
     struct json_value value;
-    const char *typestr;
+    const char *typestr = NULL;
     const char *errstr;
+    int alias_type = UNSPEC;
     id_t id;
-    debug_decl(print_member_json, SUDOERS_DEBUG_UTIL)
+    debug_decl(print_member_json_int, SUDOERS_DEBUG_UTIL)
 
     /* Most of the time we print a string. */
     value.type = JSON_STRING;
-    value.u.string = m->name;
+    if (name != NULL) {
+	value.u.string = name;
+    } else {
+	switch (type) {
+	case ALL:
+	    value.u.string = "ALL";
+	    break;
+	case MYSELF:
+	    value.u.string = "";
+	    break;
+	default:
+	    sudo_fatalx("missing member name for type %d", type);
+	}
+    }
 
-    switch (m->type) {
+    switch (type) {
     case USERGROUP:
 	value.u.string++; /* skip leading '%' */
 	if (*value.u.string == ':') {
 	    value.u.string++;
 	    typestr = "nonunixgroup";
 	    if (*value.u.string == '#') {
-		id = sudo_strtoid(m->name + 3, NULL, NULL, &errstr);
+		id = sudo_strtoid(value.u.string + 1, NULL, NULL, &errstr);
 		if (errstr != NULL) {
 		    sudo_warnx("internal error: non-Unix group ID %s: \"%s\"",
-			errstr, m->name);
+			errstr, value.u.string + 1);
 		} else {
 		    value.type = JSON_ID;
 		    value.u.id = id;
@@ -378,10 +383,10 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	} else {
 	    typestr = "usergroup";
 	    if (*value.u.string == '#') {
-		id = sudo_strtoid(m->name + 2, NULL, NULL, &errstr);
+		id = sudo_strtoid(value.u.string + 1, NULL, NULL, &errstr);
 		if (errstr != NULL) {
 		    sudo_warnx("internal error: group ID %s: \"%s\"",
-			errstr, m->name);
+			errstr, value.u.string + 1);
 		} else {
 		    value.type = JSON_ID;
 		    value.u.id = id;
@@ -398,10 +403,15 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	typestr = "networkaddr";
 	break;
     case COMMAND:
-	print_command_json(fp, m, indent, last_one);
+	print_command_json(fp, name, type, negated, indent, last_one);
 	debug_return;
+    case ALL:
+    case MYSELF:
     case WORD:
 	switch (word_type) {
+	case TYPE_COMMAND:
+	    typestr = "command";
+	    break;
 	case TYPE_HOSTNAME:
 	    typestr = "hostname";
 	    break;
@@ -412,10 +422,10 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	case TYPE_USERNAME:
 	    typestr = "username";
 	    if (*value.u.string == '#') {
-		id = sudo_strtoid(m->name + 1, NULL, NULL, &errstr);
+		id = sudo_strtoid(value.u.string + 1, NULL, NULL, &errstr);
 		if (errstr != NULL) {
 		    sudo_warnx("internal error: user ID %s: \"%s\"",
-			errstr, m->name);
+			errstr, name);
 		} else {
 		    value.type = JSON_ID;
 		    value.u.id = id;
@@ -427,62 +437,100 @@ print_member_json(FILE *fp, struct member *m, enum word_type word_type,
 	    sudo_fatalx("unexpected word type %d", word_type);
 	}
 	break;
-    case ALL:
-	value.u.string = "ALL";
-	/* FALLTHROUGH */
     case ALIAS:
 	switch (word_type) {
 	case TYPE_COMMAND:
-	    typestr = "cmndalias";
+	    if (expand_aliases) {
+		alias_type = CMNDALIAS;
+	    } else {
+		typestr = "cmndalias";
+	    }
 	    break;
 	case TYPE_HOSTNAME:
-	    typestr = "hostalias";
+	    if (expand_aliases) {
+		alias_type = HOSTALIAS;
+	    } else {
+		typestr = "hostalias";
+	    }
 	    break;
 	case TYPE_RUNASGROUP:
 	case TYPE_RUNASUSER:
-	    typestr = "runasalias";
+	    if (expand_aliases) {
+		alias_type = RUNASALIAS;
+	    } else {
+		typestr = "runasalias";
+	    }
 	    break;
 	case TYPE_USERNAME:
-	    typestr = "useralias";
+	    if (expand_aliases) {
+		alias_type = USERALIAS;
+	    } else {
+		typestr = "useralias";
+	    }
 	    break;
 	default:
 	    sudo_fatalx("unexpected word type %d", word_type);
 	}
 	break;
     default:
-	sudo_fatalx("unexpected member type %d", m->type);
+	sudo_fatalx("unexpected member type %d", type);
     }
 
-    if (m->negated) {
-	print_indent(fp, indent);
-	fputs("{\n", fp);
-	indent += 4;
-	print_pair_json(fp, NULL, typestr, &value, ",\n", indent);
-	value.type = JSON_BOOL;
-	value.u.boolean = true;
-	print_pair_json(fp, NULL, "negated", &value, "\n", indent);
-	indent -= 4;
-	print_indent(fp, indent);
-	putc('}', fp);
+    if (expand_aliases && type == ALIAS) {
+	struct alias *a;
+	struct member *m;
+
+	/* Print each member of the alias. */
+	if ((a = alias_get(parse_tree, value.u.string, alias_type)) != NULL) {
+	    TAILQ_FOREACH(m, &a->members, entries) {
+		print_member_json_int(fp, parse_tree, m->name, m->type,
+		    negated ? !m->negated : m->negated,
+		    alias_to_word_type(alias_type),
+		    last_one && TAILQ_NEXT(m, entries) == NULL, indent, true);
+	    }
+	    alias_put(a);
+	}
     } else {
-	print_pair_json(fp, "{ ", typestr, &value, " }", indent);
+	if (negated) {
+	    print_indent(fp, indent);
+	    fputs("{\n", fp);
+	    indent += 4;
+	    print_pair_json(fp, NULL, typestr, &value, ",\n", indent);
+	    value.type = JSON_BOOL;
+	    value.u.boolean = true;
+	    print_pair_json(fp, NULL, "negated", &value, "\n", indent);
+	    indent -= 4;
+	    print_indent(fp, indent);
+	    putc('}', fp);
+	} else {
+	    print_pair_json(fp, "{ ", typestr, &value, " }", indent);
+	}
+
+	if (!last_one)
+	    putc(',', fp);
+	putc('\n', fp);
     }
-    if (!last_one)
-	putc(',', fp);
-    putc('\n', fp);
 
     debug_return;
+}
+
+static void
+print_member_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    struct member *m, enum word_type word_type, bool last_one,
+    int indent, bool expand_aliases)
+{
+    print_member_json_int(fp, parse_tree, m->name, m->type, m->negated,
+	word_type, last_one, indent, expand_aliases);
 }
 
 /*
  * Callback for alias_apply() to print an alias entry if it matches
  * the type specified in the closure.
  */
-int
-print_alias_json(void *v1, void *v2)
+static int
+print_alias_json(struct sudoers_parse_tree *parse_tree, struct alias *a, void *v)
 {
-    struct alias *a = v1;
-    struct json_alias_closure *closure = v2;
+    struct json_alias_closure *closure = v;
     struct member *m;
     debug_decl(print_alias_json, SUDOERS_DEBUG_UTIL)
 
@@ -502,9 +550,9 @@ print_alias_json(void *v1, void *v2)
 
     closure->indent += 4;
     TAILQ_FOREACH(m, &a->members, entries) {
-	print_member_json(closure->fp, m,
+	print_member_json(closure->fp, parse_tree, m,
 	    alias_to_word_type(closure->alias_type),
-	    TAILQ_NEXT(m, entries) == NULL, closure->indent);
+	    TAILQ_NEXT(m, entries) == NULL, closure->indent, false);
     }
     closure->indent -= 4;
     debug_return_int(0);
@@ -514,7 +562,8 @@ print_alias_json(void *v1, void *v2)
  * Print the binding for a Defaults entry of the specified type.
  */
 static void
-print_binding_json(FILE *fp, struct member_list *binding, int type, int indent)
+print_binding_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    struct member_list *binding, int type, int indent, bool expand_aliases)
 {
     struct member *m;
     debug_decl(print_binding_json, SUDOERS_DEBUG_UTIL)
@@ -527,8 +576,8 @@ print_binding_json(FILE *fp, struct member_list *binding, int type, int indent)
 
     /* Print each member object in binding. */
     TAILQ_FOREACH(m, binding, entries) {
-	print_member_json(fp, m, defaults_to_word_type(type),
-	     TAILQ_NEXT(m, entries) == NULL, indent);
+	print_member_json(fp, parse_tree, m, defaults_to_word_type(type),
+	     TAILQ_NEXT(m, entries) == NULL, indent, expand_aliases);
     }
 
     indent -= 4;
@@ -613,20 +662,21 @@ get_defaults_type(struct defaults *def)
  * Export all Defaults in JSON format.
  */
 static bool
-print_defaults_json(FILE *fp, int indent, bool need_comma)
+print_defaults_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    int indent, bool expand_aliases, bool need_comma)
 {
     struct json_value value;
     struct defaults *def, *next;
     int type;
     debug_decl(print_defaults_json, SUDOERS_DEBUG_UTIL)
 
-    if (TAILQ_EMPTY(&defaults))
+    if (TAILQ_EMPTY(&parse_tree->defaults))
 	debug_return_bool(need_comma);
 
     fprintf(fp, "%s\n%*s\"Defaults\": [\n", need_comma ? "," : "", indent, "");
     indent += 4;
 
-    TAILQ_FOREACH_SAFE(def, &defaults, entries, next) {
+    TAILQ_FOREACH_SAFE(def, &parse_tree->defaults, entries, next) {
 	type = get_defaults_type(def);
 	if (type == -1) {
 	    sudo_warnx(U_("unknown defaults entry \"%s\""), def->var);
@@ -637,7 +687,8 @@ print_defaults_json(FILE *fp, int indent, bool need_comma)
 	/* Found it, print object container and binding (if any). */
 	fprintf(fp, "%*s{\n", indent, "");
 	indent += 4;
-	print_binding_json(fp, def->binding, def->type, indent);
+	print_binding_json(fp, parse_tree, def->binding, def->type,
+	    indent, expand_aliases);
 
 	/* Validation checks. */
 	/* XXX - validate values in addition to names? */
@@ -692,8 +743,8 @@ print_defaults_json(FILE *fp, int indent, bool need_comma)
  * Iterates through the entire aliases tree.
  */
 static bool
-print_aliases_by_type_json(FILE *fp, int alias_type, const char *title,
-    int indent, bool need_comma)
+print_aliases_by_type_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    int alias_type, const char *title, int indent, bool need_comma)
 {
     struct json_alias_closure closure;
     debug_decl(print_aliases_by_type_json, SUDOERS_DEBUG_UTIL)
@@ -704,7 +755,7 @@ print_aliases_by_type_json(FILE *fp, int alias_type, const char *title,
     closure.alias_type = alias_type;
     closure.title = title;
     closure.need_comma = need_comma;
-    alias_apply(print_alias_json, &closure);
+    alias_apply(parse_tree, print_alias_json, &closure);
     if (closure.count != 0) {
 	print_indent(fp, closure.indent);
 	fputs("]\n", fp);
@@ -721,18 +772,19 @@ print_aliases_by_type_json(FILE *fp, int alias_type, const char *title,
  * Export all aliases in JSON format.
  */
 static bool
-print_aliases_json(FILE *fp, int indent, bool need_comma)
+print_aliases_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    int indent, bool need_comma)
 {
     debug_decl(print_aliases_json, SUDOERS_DEBUG_UTIL)
 
-    need_comma = print_aliases_by_type_json(fp, USERALIAS, "User_Aliases",
-	indent, need_comma);
-    need_comma = print_aliases_by_type_json(fp, RUNASALIAS, "Runas_Aliases",
-	indent, need_comma);
-    need_comma = print_aliases_by_type_json(fp, HOSTALIAS, "Host_Aliases",
-	indent, need_comma);
-    need_comma = print_aliases_by_type_json(fp, CMNDALIAS, "Command_Aliases",
-	indent, need_comma);
+    need_comma = print_aliases_by_type_json(fp, parse_tree, USERALIAS,
+	"User_Aliases", indent, need_comma);
+    need_comma = print_aliases_by_type_json(fp, parse_tree, RUNASALIAS,
+	"Runas_Aliases", indent, need_comma);
+    need_comma = print_aliases_by_type_json(fp, parse_tree, HOSTALIAS,
+	"Host_Aliases", indent, need_comma);
+    need_comma = print_aliases_by_type_json(fp, parse_tree, CMNDALIAS,
+	"Command_Aliases", indent, need_comma);
 
     debug_return_bool(need_comma);
 }
@@ -743,13 +795,17 @@ print_aliases_json(FILE *fp, int indent, bool need_comma)
  * merge adjacent entries that are identical in all but the command.
  */
 static void
-print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
-    int indent)
+print_cmndspec_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    struct cmndspec *cs, struct cmndspec **nextp,
+    struct defaults_list *options, bool expand_aliases, int indent)
 {
     struct cmndspec *next = *nextp;
     struct json_value value;
+    struct defaults *def;
     struct member *m;
+    struct tm *tp;
     bool last_one;
+    char timebuf[sizeof("20120727121554Z")];
     debug_decl(print_cmndspec_json, SUDOERS_DEBUG_UTIL)
 
     /* Open Cmnd_Spec object. */
@@ -761,8 +817,8 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
 	fprintf(fp, "%*s\"runasusers\": [\n", indent, "");
 	indent += 4;
 	TAILQ_FOREACH(m, cs->runasuserlist, entries) {
-	    print_member_json(fp, m, TYPE_RUNASUSER,
-		TAILQ_NEXT(m, entries) == NULL, indent);
+	    print_member_json(fp, parse_tree, m, TYPE_RUNASUSER,
+		TAILQ_NEXT(m, entries) == NULL, indent, expand_aliases);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
@@ -773,68 +829,129 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
 	fprintf(fp, "%*s\"runasgroups\": [\n", indent, "");
 	indent += 4;
 	TAILQ_FOREACH(m, cs->runasgrouplist, entries) {
-	    print_member_json(fp, m, TYPE_RUNASGROUP,
-		TAILQ_NEXT(m, entries) == NULL, indent);
+	    print_member_json(fp, parse_tree, m, TYPE_RUNASGROUP,
+		TAILQ_NEXT(m, entries) == NULL, indent, expand_aliases);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
     }
 
-    /* Print tags */
-    if (TAGS_SET(cs->tags)) {
+    /* Print options and tags */
+    if (cs->timeout > 0 || cs->notbefore != UNSPEC || cs->notafter != UNSPEC ||
+	TAGS_SET(cs->tags) || !TAILQ_EMPTY(options)) {
 	struct cmndtag tag = cs->tags;
+	const char *prefix = "\n";
 
-	fprintf(fp, "%*s\"Options\": [\n", indent, "");
+	fprintf(fp, "%*s\"Options\": [", indent, "");
 	indent += 4;
+	if (cs->timeout > 0) {
+	    value.type = JSON_NUMBER;
+	    value.u.number = cs->timeout;
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "command_timeout", &value, " }", indent);
+	    prefix = ",\n";
+	}
+	if (cs->notbefore != UNSPEC) {
+	    if ((tp = gmtime(&cs->notbefore)) == NULL) {
+		sudo_warn(U_("unable to get GMT time"));
+	    } else {
+		if (strftime(timebuf, sizeof(timebuf), "%Y%m%d%H%M%SZ", tp) == 0) {
+		    sudo_warnx(U_("unable to format timestamp"));
+		} else {
+		    value.type = JSON_STRING;
+		    value.u.string = timebuf;
+		    fputs(prefix, fp);
+		    print_pair_json(fp, "{ ", "notbefore", &value, " }", indent);
+		    prefix = ",\n";
+		}
+	    }
+	}
+	if (cs->notafter != UNSPEC) {
+	    if ((tp = gmtime(&cs->notafter)) == NULL) {
+		sudo_warn(U_("unable to get GMT time"));
+	    } else {
+		if (strftime(timebuf, sizeof(timebuf), "%Y%m%d%H%M%SZ", tp) == 0) {
+		    sudo_warnx(U_("unable to format timestamp"));
+		} else {
+		    value.type = JSON_STRING;
+		    value.u.string = timebuf;
+		    fputs(prefix, fp);
+		    print_pair_json(fp, "{ ", "notafter", &value, " }", indent);
+		    prefix = ",\n";
+		}
+	    }
+	}
 	if (tag.nopasswd != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = !tag.nopasswd;
-	    tag.nopasswd = UNSPEC;
-	    print_pair_json(fp, "{ ", "authenticate", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "authenticate", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.noexec != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.noexec;
-	    tag.noexec = UNSPEC;
-	    print_pair_json(fp, "{ ", "noexec", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "noexec", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.send_mail != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.send_mail;
-	    tag.send_mail = UNSPEC;
-	    print_pair_json(fp, "{ ", "send_mail", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "send_mail", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.setenv != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.setenv;
-	    tag.setenv = UNSPEC;
-	    print_pair_json(fp, "{ ", "setenv", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "setenv", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.follow != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.follow;
-	    tag.follow = UNSPEC;
-	    print_pair_json(fp, "{ ", "sudoedit_follow", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "sudoedit_follow", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.log_input != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.log_input;
-	    tag.log_input = UNSPEC;
-	    print_pair_json(fp, "{ ", "log_input", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "log_input", &value, " }", indent);
+	    prefix = ",\n";
 	}
 	if (tag.log_output != UNSPEC) {
 	    value.type = JSON_BOOL;
 	    value.u.boolean = tag.log_output;
-	    tag.log_output = UNSPEC;
-	    print_pair_json(fp, "{ ", "log_output", &value,
-		TAGS_SET(tag) ? " },\n" : " }\n", indent);
+	    fputs(prefix, fp);
+	    print_pair_json(fp, "{ ", "log_output", &value, " }", indent);
+	    prefix = ",\n";
 	}
+	TAILQ_FOREACH(def, options, entries) {
+	    int type = get_defaults_type(def);
+	    if (type == -1) {
+		sudo_warnx(U_("unknown defaults entry \"%s\""), def->var);
+		/* XXX - just pass it through as a string anyway? */
+		continue;
+	    }
+	    fputs(prefix, fp);
+	    if ((type & T_MASK) == T_FLAG || def->val == NULL) {
+		value.type = JSON_BOOL;
+		value.u.boolean = def->op;
+		print_pair_json(fp, "{ ", def->var, &value, " }", indent);
+	    } else if ((type & T_MASK) == T_LIST) {
+		print_defaults_list_json(fp, def, indent);
+	    } else {
+		value.type = JSON_STRING;
+		value.u.string = def->val;
+		print_pair_json(fp, "{ ", def->var, &value, " }", indent);
+	    }
+	    prefix = ",\n";
+	}
+	putc('\n', fp);
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
     }
@@ -893,7 +1010,8 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
 #endif /* HAVE_SELINUX */
 	    ;
 
-	print_member_json(fp, cs->cmnd, TYPE_COMMAND, last_one, indent);
+	print_member_json(fp, parse_tree, cs->cmnd, TYPE_COMMAND,
+	    last_one, indent, expand_aliases);
 	if (last_one)
 	    break;
 	cs = next;
@@ -915,7 +1033,8 @@ print_cmndspec_json(FILE *fp, struct cmndspec *cs, struct cmndspec **nextp,
  * Print a User_Spec in JSON format at the specified indent level.
  */
 static void
-print_userspec_json(FILE *fp, struct userspec *us, int indent)
+print_userspec_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    struct userspec *us, int indent, bool expand_aliases)
 {
     struct privilege *priv;
     struct member *m;
@@ -936,8 +1055,8 @@ print_userspec_json(FILE *fp, struct userspec *us, int indent)
 	fprintf(fp, "%*s\"User_List\": [\n", indent, "");
 	indent += 4;
 	TAILQ_FOREACH(m, &us->users, entries) {
-	    print_member_json(fp, m, TYPE_USERNAME,
-		TAILQ_NEXT(m, entries) == NULL, indent);
+	    print_member_json(fp, parse_tree, m, TYPE_USERNAME,
+		TAILQ_NEXT(m, entries) == NULL, indent, expand_aliases);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
@@ -946,8 +1065,8 @@ print_userspec_json(FILE *fp, struct userspec *us, int indent)
 	fprintf(fp, "%*s\"Host_List\": [\n", indent, "");
 	indent += 4;
 	TAILQ_FOREACH(m, &priv->hostlist, entries) {
-	    print_member_json(fp, m, TYPE_HOSTNAME,
-		TAILQ_NEXT(m, entries) == NULL, indent);
+	    print_member_json(fp, parse_tree, m, TYPE_HOSTNAME,
+		TAILQ_NEXT(m, entries) == NULL, indent, expand_aliases);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s],\n", indent, "");
@@ -956,7 +1075,8 @@ print_userspec_json(FILE *fp, struct userspec *us, int indent)
 	fprintf(fp, "%*s\"Cmnd_Specs\": [\n", indent, "");
 	indent += 4;
 	TAILQ_FOREACH_SAFE(cs, &priv->cmndlist, entries, next) {
-	    print_cmndspec_json(fp, cs, &next, indent);
+	    print_cmndspec_json(fp, parse_tree, cs, &next, &priv->defaults,
+		expand_aliases, indent);
 	}
 	indent -= 4;
 	fprintf(fp, "%*s]\n", indent, "");
@@ -971,18 +1091,19 @@ print_userspec_json(FILE *fp, struct userspec *us, int indent)
 }
 
 static bool
-print_userspecs_json(FILE *fp, int indent, bool need_comma)
+print_userspecs_json(FILE *fp, struct sudoers_parse_tree *parse_tree,
+    int indent, bool expand_aliases, bool need_comma)
 {
     struct userspec *us;
     debug_decl(print_userspecs_json, SUDOERS_DEBUG_UTIL)
 
-    if (TAILQ_EMPTY(&userspecs))
+    if (TAILQ_EMPTY(&parse_tree->userspecs))
 	debug_return_bool(need_comma);
 
     fprintf(fp, "%s\n%*s\"User_Specs\": [\n", need_comma ? "," : "", indent, "");
     indent += 4;
-    TAILQ_FOREACH(us, &userspecs, entries) {
-	print_userspec_json(fp, us, indent);
+    TAILQ_FOREACH(us, &parse_tree->userspecs, entries) {
+	print_userspec_json(fp, parse_tree, us, indent, expand_aliases);
     }
     indent -= 4;
     fprintf(fp, "%*s]", indent, "");
@@ -992,83 +1113,49 @@ print_userspecs_json(FILE *fp, int indent, bool need_comma)
 
 /*
  * Export the parsed sudoers file in JSON format.
- * XXX - ignores strict flag and doesn't pass through quiet flag
  */
 bool
-export_sudoers(const char *sudoers_path, const char *export_path,
-    bool quiet, bool strict)
+convert_sudoers_json(struct sudoers_parse_tree *parse_tree,
+    const char *output_file, struct cvtsudoers_config *conf)
 {
-    bool ret = false, need_comma = false;
+    bool ret = true, need_comma = false;
     const int indent = 4;
-    FILE *export_fp = stdout;
-    debug_decl(export_sudoers, SUDOERS_DEBUG_UTIL)
+    FILE *output_fp = stdout;
+    debug_decl(convert_sudoers_json, SUDOERS_DEBUG_UTIL)
 
-    if (strcmp(sudoers_path, "-") == 0) {
-	sudoersin = stdin;
-	sudoers_path = "stdin";
-    } else if ((sudoersin = fopen(sudoers_path, "r")) == NULL) {
-	if (!quiet)
-	    sudo_warn(U_("unable to open %s"), sudoers_path);
-	goto done;
-    }
-    if (strcmp(export_path, "-") != 0) {
-	if (strcmp(sudoers_path, export_path) == 0) {
-	    if (!quiet) {
-		sudo_warnx(U_("%s: input and output files must be different"),
-		    sudoers_path);
-	    }
-	    goto done;
-	}
-	if ((export_fp = fopen(export_path, "w")) == NULL) {
-	    if (!quiet)
-		sudo_warn(U_("unable to open %s"), export_path);
-	    goto done;
-	}
-    }
-    init_parser(sudoers_path, quiet);
-    if (sudoersparse() && !parse_error) {
-	if (!quiet)
-	    sudo_warnx(U_("failed to parse %s file, unknown error"), sudoers_path);
-	parse_error = true;
-	rcstr_delref(errorfile);
-	if ((errorfile = rcstr_dup(sudoers_path)) == NULL)
-	    sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
-    }
-    ret = !parse_error;
-
-    if (parse_error) {
-	if (!quiet) {
-	    if (errorlineno != -1)
-		sudo_warnx(U_("parse error in %s near line %d\n"),
-		    errorfile, errorlineno);
-	    else if (errorfile != NULL)
-		sudo_warnx(U_("parse error in %s\n"), errorfile);
-	}
-	goto done;
+    if (strcmp(output_file, "-") != 0) {
+	if ((output_fp = fopen(output_file, "w")) == NULL)
+	    sudo_fatal(U_("unable to open %s"), output_file);
     }
 
     /* Open JSON output. */
-    putc('{', export_fp);
+    putc('{', output_fp);
 
     /* Dump Defaults in JSON format. */
-    need_comma = print_defaults_json(export_fp, indent, need_comma);
+    if (!ISSET(conf->suppress, SUPPRESS_DEFAULTS)) {
+	need_comma = print_defaults_json(output_fp, parse_tree, indent,
+	    conf->expand_aliases, need_comma);
+    }
 
     /* Dump Aliases in JSON format. */
-    need_comma = print_aliases_json(export_fp, indent, need_comma);
+    if (!conf->expand_aliases && !ISSET(conf->suppress, SUPPRESS_ALIASES)) {
+	need_comma = print_aliases_json(output_fp, parse_tree, indent,
+	    need_comma);
+    }
 
     /* Dump User_Specs in JSON format. */
-    print_userspecs_json(export_fp, indent, need_comma);
+    if (!ISSET(conf->suppress, SUPPRESS_PRIVS)) {
+	print_userspecs_json(output_fp, parse_tree, indent,
+	    conf->expand_aliases, need_comma);
+    }
 
     /* Close JSON output. */
-    fputs("\n}\n", export_fp);
+    fputs("\n}\n", output_fp);
+    (void)fflush(output_fp);
+    if (ferror(output_fp))
+	ret = false;
+    if (output_fp != stdout)
+	fclose(output_fp);
 
-done:
-    if (export_fp != NULL) {
-	(void)fflush(export_fp);
-	if (ferror(export_fp))
-	    ret = false;
-	if (export_fp != stdout)
-	    fclose(export_fp);
-    }
     debug_return_bool(ret);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2016-2017 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -12,6 +12,11 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -35,7 +40,7 @@ void
 sudo_vsyslog(int pri, const char *fmt, va_list ap)
 {
     int saved_errno = errno;
-    char *cp, *ep, msgbuf[8192], new_fmt[1024];
+    char *cp, *ep, msgbuf[8192], new_fmt[2048];
     va_list ap2;
     size_t len;
 
@@ -47,7 +52,6 @@ sudo_vsyslog(int pri, const char *fmt, va_list ap)
 	    if (len >= (size_t)(ep - cp))
 		len = (size_t)(ep - cp) - 1;
 	    cp += len;
-	    break;
 	} else {
 	    if (fmt[0] == '%' && fmt[1] == '%') {
 		    fmt++;
@@ -62,7 +66,7 @@ sudo_vsyslog(int pri, const char *fmt, va_list ap)
 
     /* Format message and log it, using a static buffer if possible. */
     va_copy(ap2, ap);
-    len = (size_t)snprintf(msgbuf, sizeof(msgbuf), new_fmt, ap2);
+    len = (size_t)vsnprintf(msgbuf, sizeof(msgbuf), new_fmt, ap2);
     va_end(ap2);
     if (len < sizeof(msgbuf)) {
 	syslog(pri, "%s", msgbuf);

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 1993-1996,1998-2005, 2007-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1993-1996,1998-2005, 2007-2018
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,10 +19,14 @@
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
  */
 
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+ */
+
 #include <config.h>
 
 #include <sys/types.h>
-#include <sys/time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef HAVE_STRING_H
@@ -32,9 +36,7 @@
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
 #include <unistd.h>
-#ifdef TIME_WITH_SYS_TIME
-# include <time.h>
-#endif
+#include <time.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pwd.h>
@@ -127,6 +129,8 @@ check_user_interactive(int validated, int mode, struct passwd *auth_pw)
 	    ret = true;
 	    break;
 	}
+	sudo_debug_printf(SUDO_DEBUG_INFO,
+	    "%s: check user flag overrides time stamp", __func__);
 	/* FALLTHROUGH */
 
     default:
@@ -176,6 +180,7 @@ check_user(int validated, int mode)
 {
     struct passwd *auth_pw;
     int ret = -1;
+    bool exempt = false;
     debug_decl(check_user, SUDOERS_DEBUG_AUTH)
 
     /*
@@ -192,6 +197,10 @@ check_user(int validated, int mode)
      * If the user is not changing uid/gid, no need for a password.
      */
     if (!def_authenticate || user_is_exempt()) {
+	sudo_debug_printf(SUDO_DEBUG_INFO, "%s: %s", __func__,
+	    !def_authenticate ? "authentication disabled" :
+	    "user exempt from authentication");
+	exempt = true;
 	ret = true;
 	goto done;
     }
@@ -204,6 +213,8 @@ check_user(int validated, int mode)
 	if (runas_privs == NULL && runas_limitprivs == NULL)
 #endif
 	{
+	    sudo_debug_printf(SUDO_DEBUG_INFO,
+		"%s: user running command as self", __func__);
 	    ret = true;
 	    goto done;
 	}
@@ -212,6 +223,10 @@ check_user(int validated, int mode)
     ret = check_user_interactive(validated, mode, auth_pw);
 
 done:
+    if (ret == true) {
+	/* The approval function may disallow a user post-authentication. */
+	ret = sudo_auth_approval(auth_pw, validated, exempt);
+    }
     sudo_auth_cleanup(auth_pw);
     sudo_pw_delref(auth_pw);
 

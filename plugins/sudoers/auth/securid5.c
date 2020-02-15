@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1999-2005, 2007, 2010-2012, 2014-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  * Copyright (c) 2002 Michael Stroucken <michael@stroucken.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -14,13 +14,15 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Sponsored in part by the Defense Advanced Research Projects
  * Agency (DARPA) and Air Force Research Laboratory, Air Force
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -145,8 +147,8 @@ sudo_securid_verify(struct passwd *pw, char *pass, sudo_auth *auth, struct sudo_
     int ret;
     debug_decl(sudo_securid_verify, SUDOERS_DEBUG_AUTH)
 
-    pass = auth_getpass("Enter your PASSCODE: ",
-	def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
+    pass = auth_getpass("Enter your PASSCODE: ", SUDO_CONV_PROMPT_ECHO_OFF,
+	callback);
 
     /* Have ACE verify password */
     switch (SD_Check(*sd, pass, pw->pw_name)) {
@@ -185,7 +187,7 @@ sudo_securid_verify(struct passwd *pw, char *pass, sudo_auth *auth, struct sudo_
 !!! ATTENTION !!!\n\
 Wait for the token code to change, \n\
 then enter the new token code.\n", \
-		def_passwd_timeout * 60, SUDO_CONV_PROMPT_ECHO_OFF, callback);
+		SUDO_CONV_PROMPT_ECHO_OFF, callback);
 
 		if (SD_Next(*sd, pass) == ACM_OK) {
 			ret = AUTH_SUCCESS;
