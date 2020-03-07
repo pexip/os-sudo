@@ -1,3 +1,11 @@
+sudo (1.8.27-1+deb10u2pexip1) pexip; urgency=medium
+
+  * Migrate to Buster
+  * Refresh debian/patches/keep_home_by_default.patch note: upstream
+    dropped this patch during the jessie upgrade (1.8.10p3-1+deb8u3)
+
+ -- Vincent Sanders <vince@pexip.com>  Sat, 07 Mar 2020 13:34:36 +0000
+
 sudo (1.8.27-1+deb10u2) buster; urgency=medium
 
   * Non-maintainer upload.

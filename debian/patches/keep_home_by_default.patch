@@ -4,14 +4,12 @@ Description: Set HOME in initial_keepenv_table
  resetting the home for -H and -i options, so this is the only part that's
  missing.
 Author: Steve Langasek <steve.langasek@canonical.com>
-Index: sudo-1.8.3p1/plugins/sudoers/env.c
-===================================================================
---- sudo-1.8.3p1.orig/plugins/sudoers/env.c	2011-11-20 12:20:16.741656332 -0500
-+++ sudo-1.8.3p1/plugins/sudoers/env.c	2011-11-20 12:20:19.469656402 -0500
-@@ -193,6 +193,7 @@
- static const char *initial_keepenv_table[] = {
+--- a/plugins/sudoers/env.c
++++ b/plugins/sudoers/env.c
+@@ -203,6 +203,7 @@
      "COLORS",
      "DISPLAY",
+     "DPKG_COLORS",
 +    "HOME",
      "HOSTNAME",
      "KRB5CCNAME",
