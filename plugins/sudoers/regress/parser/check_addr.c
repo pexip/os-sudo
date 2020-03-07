@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2011-2013 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -38,7 +38,6 @@
 #define SUDO_ERROR_WRAP 0
 
 #include "sudoers.h"
-#include "parse.h"
 #include "interfaces.h"
 
 __dso_public int main(int argc, char *argv[]);

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2000-2005, 2007-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2000-2005, 2007-2018
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,11 @@
  * Sponsored in part by the Defense Advanced Research Projects
  * Agency (DARPA) and Air Force Research Laboratory, Air Force
  * Materiel Command, USAF, under agreement number F39502-99-1-0512.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -54,42 +59,51 @@
  * Flags used in rebuild_env()
  */
 #undef DID_TERM
-#define DID_TERM	0x0001
+#define DID_TERM	0x00000001
 #undef DID_PATH
-#define DID_PATH	0x0002
+#define DID_PATH	0x00000002
 #undef DID_HOME
-#define DID_HOME	0x0004
+#define DID_HOME	0x00000004
 #undef DID_SHELL
-#define DID_SHELL	0x0008
+#define DID_SHELL	0x00000008
 #undef DID_LOGNAME
-#define DID_LOGNAME	0x0010
+#define DID_LOGNAME	0x00000010
 #undef DID_USER
-#define DID_USER    	0x0020
-#undef DID_USERNAME
-#define DID_USERNAME   	0x0040
+#define DID_USER    	0x00000020
+#undef DID_LOGIN
+#define DID_LOGIN   	0x00000040
 #undef DID_MAIL
-#define DID_MAIL   	0x0080
+#define DID_MAIL   	0x00000080
 #undef DID_MAX
-#define DID_MAX    	0x00ff
+#define DID_MAX    	0x0000ffff
 
 #undef KEPT_TERM
-#define KEPT_TERM	0x0100
+#define KEPT_TERM	0x00010000
 #undef KEPT_PATH
-#define KEPT_PATH	0x0200
+#define KEPT_PATH	0x00020000
 #undef KEPT_HOME
-#define KEPT_HOME	0x0400
+#define KEPT_HOME	0x00040000
 #undef KEPT_SHELL
-#define KEPT_SHELL	0x0800
+#define KEPT_SHELL	0x00080000
 #undef KEPT_LOGNAME
-#define KEPT_LOGNAME	0x1000
+#define KEPT_LOGNAME	0x00100000
 #undef KEPT_USER
-#define KEPT_USER    	0x2000
-#undef KEPT_USERNAME
-#define KEPT_USERNAME	0x4000
+#define KEPT_USER    	0x00200000
+#undef KEPT_LOGIN
+#define KEPT_LOGIN	0x00400000
 #undef KEPT_MAIL
-#define KEPT_MAIL	0x8000
+#define KEPT_MAIL	0x00800000
 #undef KEPT_MAX
-#define KEPT_MAX    	0xff00
+#define KEPT_MAX    	0xffff0000
+
+/*
+ * AIX sets the LOGIN environment variable too.
+ */
+#ifdef _AIX
+# define KEPT_USER_VARIABLES (KEPT_LOGIN|KEPT_LOGNAME|KEPT_USER)
+#else
+# define KEPT_USER_VARIABLES (KEPT_LOGNAME|KEPT_USER)
+#endif
 
 struct environment {
     char **envp;		/* pointer to the new environment */
@@ -164,8 +178,7 @@ static const char *initial_badenv_table[] = {
     "PYTHONUSERBASE",		/* python, per user site-packages directory */
     "RUBYLIB",			/* ruby, library load path */
     "RUBYOPT",			/* ruby, extra command line options */
-    "BASH_FUNC_*",		/* new-style bash functions */
-    "__BASH_FUNC<*",		/* new-style bash functions (Apple) */
+    "*=()*",			/* bash functions */
     NULL
 };
 
@@ -497,6 +510,7 @@ sudo_unsetenv_nodebug(const char *var)
 	    char **cur = ep;
 	    while ((*cur = *(cur + 1)) != NULL)
 		cur++;
+	    env.env_len--;
 	    /* Keep going, could be multiple instances of the var. */
 	} else {
 	    ep++;
@@ -569,30 +583,44 @@ static bool
 matches_env_list(const char *var, struct list_members *list, bool *full_match)
 {
     struct list_member *cur;
-    bool match = false;
+    bool is_logname = false;
     debug_decl(matches_env_list, SUDOERS_DEBUG_ENV)
 
-    SLIST_FOREACH(cur, list, entries) {
-	size_t sep_pos, len = strlen(cur->value);
-	bool iswild = false;
+    switch (*var) {
+    case 'L':
+	if (strncmp(var, "LOGNAME=", 8) == 0)
+	    is_logname = true;
+#ifdef _AIX
+	else if (strncmp(var, "LOGIN=", 6) == 0)
+	    is_logname = true;
+#endif
+	break;
+    case 'U':
+	if (strncmp(var, "USER=", 5) == 0)
+	    is_logname = true;
+	break;
+    }
 
-	/* Locate position of the '=' separator in var=value. */
-	sep_pos = strcspn(var, "=");
-
-	/* Deal with '*' wildcard at the end of the pattern. */
-	if (cur->value[len - 1] == '*') {
-	    len--;
-	    iswild = true;
+    if (is_logname) {
+	/*
+	 * We treat LOGIN, LOGNAME and USER specially.
+	 * If one is preserved/deleted we want to preserve/delete them all.
+	 */
+	SLIST_FOREACH(cur, list, entries) {
+	    if (matches_env_pattern(cur->value, "LOGNAME", full_match) ||
+#ifdef _AIX
+		matches_env_pattern(cur->value, "LOGIN", full_match) ||
+#endif
+		matches_env_pattern(cur->value, "USER", full_match))
+		debug_return_bool(true);
 	}
-	if (strncmp(cur->value, var, len) == 0 &&
-	    (iswild || len == sep_pos || var[len] == '\0')) {
-	    /* If we matched past the '=', count as a full match. */
-	    *full_match = len > sep_pos + 1;
-	    match = true;
-	    break;
+    } else {
+	SLIST_FOREACH(cur, list, entries) {
+	    if (matches_env_pattern(cur->value, var, full_match))
+		debug_return_bool(true);
 	}
     }
-    debug_return_bool(match);
+    debug_return_bool(false);
 }
 
 /*
@@ -708,24 +736,14 @@ matches_env_keep(const char *var, bool *full_match)
 static bool
 env_should_delete(const char *var)
 {
-    const char *cp;
     int delete_it;
     bool full_match = false;
     debug_decl(env_should_delete, SUDOERS_DEBUG_ENV);
-
-    /* Skip variables with values beginning with () (bash functions) */
-    if ((cp = strchr(var, '=')) != NULL) {
-	if (strncmp(cp, "=() ", 4) == 0) {
-	    delete_it = true;
-	    goto done;
-	}
-    }
 
     delete_it = matches_env_delete(var);
     if (!delete_it)
 	delete_it = matches_env_check(var, &full_match) == false;
 
-done:
     sudo_debug_printf(SUDO_DEBUG_INFO, "delete %s: %s",
 	var, delete_it ? "YES" : "NO");
     debug_return_bool(delete_it);
@@ -795,6 +813,10 @@ env_update_didvar(const char *ep, unsigned int *didvar)
 		SET(*didvar, DID_HOME);
 	    break;
 	case 'L':
+#ifdef _AIX
+	    if (strncmp(ep, "LOGIN=", 8) == 0)
+		SET(*didvar, DID_LOGIN);
+#endif
 	    if (strncmp(ep, "LOGNAME=", 8) == 0)
 		SET(*didvar, DID_LOGNAME);
 	    break;
@@ -817,8 +839,6 @@ env_update_didvar(const char *ep, unsigned int *didvar)
 	case 'U':
 	    if (strncmp(ep, "USER=", 5) == 0)
 		SET(*didvar, DID_USER);
-	    if (strncmp(ep, "USERNAME=", 9) == 0)
-		SET(*didvar, DID_USERNAME);
 	    break;
     }
 }
@@ -899,7 +919,7 @@ rebuild_env(void)
 #endif /* HAVE_LOGIN_CAP_H */
 #if defined(_AIX) || (defined(__linux__) && !defined(HAVE_PAM))
 	    /* Insert system-wide environment variables. */
-	    read_env_file(_PATH_ENVIRONMENT, true);
+	    read_env_file(_PATH_ENVIRONMENT, true, false);
 #endif
 	    for (ep = env.envp; *ep; ep++)
 		env_update_didvar(*ep, &didvar);
@@ -927,7 +947,7 @@ rebuild_env(void)
 		env_update_didvar(*ep, &didvar);
 	    }
 	}
-	didvar |= didvar << 8;		/* convert DID_* to KEPT_* */
+	didvar |= didvar << 16;		/* convert DID_* to KEPT_* */
 
 	/*
 	 * Add in defaults.  In -i mode these come from the runas user,
@@ -937,21 +957,25 @@ rebuild_env(void)
 	if (ISSET(sudo_mode, MODE_LOGIN_SHELL)) {
 	    CHECK_SETENV2("SHELL", runas_pw->pw_shell,
 		ISSET(didvar, DID_SHELL), true);
+#ifdef _AIX
+	    CHECK_SETENV2("LOGIN", runas_pw->pw_name,
+		ISSET(didvar, DID_LOGIN), true);
+#endif
 	    CHECK_SETENV2("LOGNAME", runas_pw->pw_name,
 		ISSET(didvar, DID_LOGNAME), true);
 	    CHECK_SETENV2("USER", runas_pw->pw_name,
 		ISSET(didvar, DID_USER), true);
-	    CHECK_SETENV2("USERNAME", runas_pw->pw_name,
-		ISSET(didvar, DID_USERNAME), true);
 	} else {
 	    /* We will set LOGNAME later in the def_set_logname case. */
 	    if (!def_set_logname) {
+#ifdef _AIX
+		if (!ISSET(didvar, DID_LOGIN))
+		    CHECK_SETENV2("LOGIN", user_name, false, true);
+#endif
 		if (!ISSET(didvar, DID_LOGNAME))
 		    CHECK_SETENV2("LOGNAME", user_name, false, true);
 		if (!ISSET(didvar, DID_USER))
 		    CHECK_SETENV2("USER", user_name, false, true);
-		if (!ISSET(didvar, DID_USERNAME))
-		    CHECK_SETENV2("USERNAME", user_name, false, true);
 	    }
 	}
 
@@ -1004,38 +1028,43 @@ rebuild_env(void)
     }
 
     /*
-     * Set $USER, $LOGNAME and $USERNAME to target if "set_logname" is not
+     * Set LOGIN, LOGNAME, and USER to target if "set_logname" is not
      * disabled.  We skip this if we are running a login shell (because
      * they have already been set).
      */
     if (def_set_logname && !ISSET(sudo_mode, MODE_LOGIN_SHELL)) {
-	if (!ISSET(didvar, (KEPT_LOGNAME|KEPT_USER|KEPT_USERNAME))) {
-	    /* Nothing preserved, set all three. */
+	if ((didvar & KEPT_USER_VARIABLES) == 0) {
+	    /* Nothing preserved, set them all. */
+#ifdef _AIX
+	    CHECK_SETENV2("LOGIN", runas_pw->pw_name, true, true);
+#endif
 	    CHECK_SETENV2("LOGNAME", runas_pw->pw_name, true, true);
 	    CHECK_SETENV2("USER", runas_pw->pw_name, true, true);
-	    CHECK_SETENV2("USERNAME", runas_pw->pw_name, true, true);
-	} else if ((didvar & (KEPT_LOGNAME|KEPT_USER|KEPT_USERNAME)) !=
-	    (KEPT_LOGNAME|KEPT_USER|KEPT_USERNAME)) {
+	} else if ((didvar & KEPT_USER_VARIABLES) != KEPT_USER_VARIABLES) {
 	    /*
-	     * Preserved some of LOGNAME, USER, USERNAME but not all.
+	     * Preserved some of LOGIN, LOGNAME, USER but not all.
 	     * Make the unset ones match so we don't end up with some
 	     * set to the invoking user and others set to the runas user.
 	     */
 	    if (ISSET(didvar, KEPT_LOGNAME))
 		cp = sudo_getenv("LOGNAME");
+#ifdef _AIX
+	    else if (ISSET(didvar, KEPT_LOGIN))
+		cp = sudo_getenv("LOGIN");
+#endif
 	    else if (ISSET(didvar, KEPT_USER))
 		cp = sudo_getenv("USER");
-	    else if (ISSET(didvar, KEPT_USERNAME))
-		cp = sudo_getenv("USERNAME");
 	    else
 		cp = NULL;
 	    if (cp != NULL) {
+#ifdef _AIX
+		if (!ISSET(didvar, KEPT_LOGIN))
+		    CHECK_SETENV2("LOGIN", cp, true, true);
+#endif
 		if (!ISSET(didvar, KEPT_LOGNAME))
 		    CHECK_SETENV2("LOGNAME", cp, true, true);
 		if (!ISSET(didvar, KEPT_USER))
 		    CHECK_SETENV2("USER", cp, true, true);
-		if (!ISSET(didvar, KEPT_USERNAME))
-		    CHECK_SETENV2("USERNAME", cp, true, true);
 	    }
 	}
     }
@@ -1170,7 +1199,7 @@ validate_env_vars(char * const env_vars[])
  * character are skipped.
  */
 bool
-read_env_file(const char *path, int overwrite)
+read_env_file(const char *path, bool overwrite, bool restricted)
 {
     FILE *fp;
     bool ret = true;
@@ -1204,6 +1233,15 @@ read_env_file(const char *path, int overwrite)
 	    continue;
 	var_len = (size_t)(val - var);
 	val_len = strlen(++val);
+
+	/*
+	 * If the env file is restricted, apply env_check and env_keep
+	 * when env_reset is set or env_delete when it is not.
+	 */
+	if (restricted) {
+	    if (def_env_reset ? !env_should_keep(var) : env_should_delete(var))
+		continue;
+	}
 
 	/* Strip leading and trailing single/double quotes */
 	if ((val[0] == '\'' || val[0] == '\"') && val[0] == val[val_len - 1]) {

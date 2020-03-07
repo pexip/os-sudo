@@ -4,6 +4,7 @@ case "$1" in
   purge)
 	rm -f /etc/sudo-ldap.conf
 	rm -rf /var/lib/sudo
+	rm -rf /run/sudo
   ;;
 
   remove|upgrade|deconfigure)

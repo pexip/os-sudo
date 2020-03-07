@@ -8,17 +8,15 @@ if [ -L /etc/alternatives/sudo ]; then
 	rm /etc/alternatives/sudo
 fi
 
+# remove legacy conffile no longer delivered
+
+if [ -f /etc/sudoers.dist ]; then
+	rm /etc/sudoers.dist
+fi
+
 # complain if no sudoers file is present
 if [ ! -f /etc/sudoers ];then
 	echo "WARNING:  /etc/sudoers not present!";
-fi
-
-# handle state directory transition from /var/run/sudo to /var/lib/sudo,
-# moving any existing content over to avoid re-lecturing existing users
-if [ -d "/var/run/sudo" ];then
-    mkdir -p /var/lib/sudo
-    (cd /var/run/sudo ; tar cf - .) | (cd /var/lib/sudo ; tar xf -)
-    rm -rf /var/run/sudo
 fi
 
 # make sure sudoers has the correct permissions and owner/group
@@ -29,6 +27,8 @@ fi
 
 # if we've gotten this far .. remove the saved, unchanged old sudoers file
 rm -f /etc/sudoers.pre-conffile
+
+#DEBHELPER#
 
 # make sure we have a sudo group
 
@@ -63,5 +63,3 @@ echo "Creating group 'sudo' with gid = $gid";
 groupadd -g $gid sudo
 
 echo ""
-
-#DEBHELPER#

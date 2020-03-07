@@ -1,7 +1,7 @@
 %{
 /*
- * Copyright (c) 1996, 1998-2005, 2007-2016
- *	Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 1996, 1998-2005, 2007-2017
+ *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,9 +14,6 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * Sponsored in part by the Defense Advanced Research Projects
  * Agency (DARPA) and Air Force Research Laboratory, Air Force
@@ -45,16 +42,10 @@
 #include <errno.h>
 #include <ctype.h>
 #include "sudoers.h"
-#include "parse.h"
 #include "toke.h"
 #include <gram.h>
+#include "sudo_digest.h"
 #include "sudo_lbuf.h"
-
-#ifdef HAVE_SHA224UPDATE
-# include <sha2.h>
-#else
-# include "compat/sha2.h"
-#endif
 
 #if defined(HAVE_STRUCT_DIRENT_D_NAMLEN) && HAVE_STRUCT_DIRENT_D_NAMLEN
 # define NAMLEN(dirent)	(dirent)->d_namlen
@@ -74,11 +65,11 @@ gid_t sudoers_gid = SUDOERS_GID;
 
 static bool continued, sawspace;
 static int prev_state;
-static yy_size_t digest_len;
+static int digest_type = -1;
 
 static bool push_include_int(char *, bool);
 static bool pop_include(void);
-static char *parse_include(char *);
+static char *parse_include_int(const char *, bool);
 
 int (*trace_print)(const char *msg) = sudoers_trace_print;
 
@@ -89,6 +80,8 @@ int (*trace_print)(const char *msg) = sudoers_trace_print;
 
 #define ECHO	ignore_result(fwrite(sudoerstext, sudoersleng, 1, sudoersout))
 
+#define	parse_include(_p)	(parse_include_int((_p), false))
+#define	parse_includedir(_p)	(parse_include_int((_p), true))
 #define	push_include(_p)	(push_include_int((_p), false))
 #define	push_includedir(_p)	(push_include_int((_p), true))
 %}
@@ -255,6 +248,8 @@ DEFVAR			[a-z_]+
 
 <WANTDIGEST>[[:xdigit:]]+ {
 			    /* Only return DIGEST if the length is correct. */
+			    yy_size_t digest_len =
+				sudo_digest_getlen(digest_type);
 			    if ((yy_size_t)sudoersleng == digest_len * 2) {
 				if (!fill(sudoerstext, sudoersleng))
 				    yyterminate();
@@ -268,7 +263,8 @@ DEFVAR			[a-z_]+
 
 <WANTDIGEST>[A-Za-z0-9\+/=]+ {
 			    /* Only return DIGEST if the length is correct. */
-			    yy_size_t len;
+			    yy_size_t len, digest_len =
+				sudo_digest_getlen(digest_type);
 			    if (sudoerstext[sudoersleng - 1] == '=') {
 				/* use padding */
 				len = 4 * ((digest_len + 2) / 3);
@@ -313,7 +309,7 @@ DEFVAR			[a-z_]+
 				LEXRETURN(ERROR);
 			    }
 
-			    if ((path = parse_include(sudoerstext)) == NULL)
+			    if ((path = parse_includedir(sudoerstext)) == NULL)
 				yyterminate();
 
 			    LEXTRACE("INCLUDEDIR\n");
@@ -528,6 +524,21 @@ ALL {
 
 			}
 
+<INITIAL>TIMEOUT {
+			    LEXTRACE("CMND_TIMEOUT ");
+			    LEXRETURN(CMND_TIMEOUT);
+			}
+
+<INITIAL>NOTBEFORE {
+			    LEXTRACE("NOTBEFORE ");
+			    LEXRETURN(NOTBEFORE);
+			}
+
+<INITIAL>NOTAFTER {
+			    LEXTRACE("NOTAFTER ");
+			    LEXRETURN(NOTAFTER);
+			}
+
 <INITIAL>ROLE {
 #ifdef HAVE_SELINUX
 			    LEXTRACE("ROLE ");
@@ -581,28 +592,28 @@ ALL {
 			}
 
 sha224			{
-			    digest_len = SHA224_DIGEST_LENGTH;
+			    digest_type = SUDO_DIGEST_SHA224;
 			    BEGIN WANTDIGEST;
 			    LEXTRACE("SHA224_TOK ");
 			    LEXRETURN(SHA224_TOK);
 			}
 
 sha256			{
-			    digest_len = SHA256_DIGEST_LENGTH;
+			    digest_type = SUDO_DIGEST_SHA256;
 			    BEGIN WANTDIGEST;
 			    LEXTRACE("SHA256_TOK ");
 			    LEXRETURN(SHA256_TOK);
 			}
 
 sha384			{
-			    digest_len = SHA384_DIGEST_LENGTH;
+			    digest_type = SUDO_DIGEST_SHA384;
 			    BEGIN WANTDIGEST;
 			    LEXTRACE("SHA384_TOK ");
 			    LEXRETURN(SHA384_TOK);
 			}
 
 sha512			{
-			    digest_len = SHA512_DIGEST_LENGTH;
+			    digest_type = SUDO_DIGEST_SHA512;
 			    BEGIN WANTDIGEST;
 			    LEXTRACE("SHA512_TOK ");
 			    LEXRETURN(SHA512_TOK);
@@ -900,6 +911,7 @@ init_lexer(void)
     keepopen = false;
     sawspace = false;
     continued = false;
+    digest_type = -1;
     prev_state = INITIAL;
 
     debug_return;
@@ -1018,7 +1030,7 @@ pop_include(void)
     FILE *fp;
     debug_decl(pop_include, SUDOERS_DEBUG_PARSER)
 
-    if (idepth == 0)
+    if (idepth == 0 || YY_CURRENT_BUFFER == NULL)
 	debug_return_bool(false);
 
     if (!keepopen)
@@ -1053,17 +1065,16 @@ pop_include(void)
 }
 
 static char *
-parse_include(char *base)
+parse_include_int(const char *base, bool isdir)
 {
-    char *cp, *ep, *path, *pp;
+    const char *cp, *ep;
+    char *path, *pp;
     int dirlen = 0, len = 0, subst = 0;
     size_t shost_len = 0;
     debug_decl(parse_include, SUDOERS_DEBUG_PARSER)
 
     /* Pull out path from #include line. */
-    cp = base + sizeof("#include");
-    if (*cp == 'i')
-	cp += 3; /* includedir */
+    cp = base + (isdir ? sizeof("#includedir") : sizeof("#include"));
     while (isblank((unsigned char) *cp))
 	cp++;
     ep = cp;

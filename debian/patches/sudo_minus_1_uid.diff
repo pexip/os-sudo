@@ -7,10 +7,17 @@ Author: Todd C. Miller <Todd.Miller@sudo.ws>
 Reviewed-by: Salvatore Bonaccorso <carnil@debian.org>
 Last-Update: 2019-10-10
 
-[Salvatore Bonaccorso: Backport to 1.8.19p1 for context changes]
---- a/lib/util/strtoid.c
-+++ b/lib/util/strtoid.c
-@@ -42,6 +42,27 @@
+diff -r fcd7a6d8330e lib/util/strtoid.c
+--- a/lib/util/strtoid.c	Fri Jan 11 13:31:15 2019 -0700
++++ b/lib/util/strtoid.c	Thu Oct 10 09:52:12 2019 -0600
+@@ -1,5 +1,5 @@
+ /*
+- * Copyright (c) 2013-2016 Todd C. Miller <Todd.Miller@sudo.ws>
++ * Copyright (c) 2013-2019 Todd C. Miller <Todd.Miller@sudo.ws>
+  *
+  * Permission to use, copy, modify, and distribute this software for any
+  * purpose with or without fee is hereby granted, provided that the above
+@@ -47,6 +47,27 @@
  #include "sudo_util.h"
  
  /*
@@ -38,7 +45,7 @@ Last-Update: 2019-10-10
   * Parse a uid/gid in string form.
   * If sep is non-NULL, it contains valid separator characters (e.g. comma, space)
   * If endp is non-NULL it is set to the next char after the ID.
-@@ -55,36 +76,33 @@ sudo_strtoid_v1(const char *p, const cha
+@@ -60,38 +81,35 @@ sudo_strtoid_v1(const char *p, const cha
      char *ep;
      id_t ret = 0;
      long long llval;
@@ -69,29 +76,31 @@ Last-Update: 2019-10-10
 -    if (!valid) {
 +    if ((errno == ERANGE && llval == LLONG_MIN) || llval < INT_MIN) {
 +	errno = ERANGE;
- 	if (errstr != NULL)
--	    *errstr = N_("invalid value");
--	errno = EINVAL;
++	if (errstr != NULL)
 +	    *errstr = N_("value too small");
++	goto done;
++    }
++
++    /* Disallow id -1, which means "no change". */
++    if (!valid_separator(p, ep, sep) || llval == -1 || llval == (id_t)UINT_MAX) {
+ 	if (errstr != NULL)
+ 	    *errstr = N_("invalid value");
+ 	errno = EINVAL;
  	goto done;
      }
 -    if (errno == ERANGE) {
 -	if (errstr != NULL) {
--	    if (llval == LLONG_MAX)) {
+-	    if (llval == LLONG_MAX)
 -		*errstr = N_("value too large");
 -	    else
 -		*errstr = N_("value too small");
 -	}
-+
-+    /* Disallow id -1, which means "no change". */
-+    if (!valid_separator(p, ep, sep) || llval == -1 || llval == (id_t)UINT_MAX) {
-+	if (errstr != NULL)
-+	    *errstr = N_("invalid value");
-+	errno = EINVAL;
- 	goto done;
-     }
+-	goto done;
+-    }
      ret = (id_t)llval;
-@@ -101,30 +119,15 @@ sudo_strtoid_v1(const char *p, const cha
+     if (errstr != NULL)
+ 	*errstr = NULL;
+@@ -106,30 +124,15 @@ sudo_strtoid_v1(const char *p, const cha
  {
      char *ep;
      id_t ret = 0;
@@ -123,7 +132,7 @@ Last-Update: 2019-10-10
  	if ((errno == ERANGE && lval == LONG_MAX) || lval > INT_MAX) {
  	    errno = ERANGE;
  	    if (errstr != NULL)
-@@ -137,28 +140,31 @@ sudo_strtoid_v1(const char *p, const cha
+@@ -142,28 +145,31 @@ sudo_strtoid_v1(const char *p, const cha
  		*errstr = N_("value too small");
  	    goto done;
  	}

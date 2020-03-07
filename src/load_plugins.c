@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2009-2018 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -12,6 +12,11 @@
  * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*
+ * This is an open source non-commercial project. Dear PVS-Studio, please check it.
+ * PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
  */
 
 #include <config.h>
@@ -208,19 +213,17 @@ sudo_load_plugin(struct plugin_container *policy_plugin,
 		info->symbol_name, _PATH_SUDO_CONF, info->lineno);
 	    goto bad;
 	}
-	if (handle != NULL) {
-	    policy_plugin->handle = handle;
-	    policy_plugin->path = strdup(path);
-	    if (policy_plugin->path == NULL) {
-		sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
-		goto bad;
-	    }
-	    policy_plugin->name = info->symbol_name;
-	    policy_plugin->options = info->options;
-	    policy_plugin->debug_instance = SUDO_DEBUG_INSTANCE_INITIALIZER;
-	    policy_plugin->u.generic = plugin;
-	    policy_plugin->debug_files = sudo_conf_debug_files(path);
+	policy_plugin->handle = handle;
+	policy_plugin->path = strdup(path);
+	if (policy_plugin->path == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    goto bad;
 	}
+	policy_plugin->name = info->symbol_name;
+	policy_plugin->options = info->options;
+	policy_plugin->debug_instance = SUDO_DEBUG_INSTANCE_INITIALIZER;
+	policy_plugin->u.generic = plugin;
+	policy_plugin->debug_files = sudo_conf_debug_files(path);
     } else if (plugin->type == SUDO_IO_PLUGIN) {
 	/* Check for duplicate entries. */
 	TAILQ_FOREACH(container, io_plugins, entries) {
@@ -232,20 +235,18 @@ sudo_load_plugin(struct plugin_container *policy_plugin,
 		break;
 	    }
 	}
-	if (handle != NULL) {
-	    container = calloc(1, sizeof(*container));
-	    if (container == NULL || (container->path = strdup(path)) == NULL) {
-		sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
-		goto bad;
-	    }
-	    container->handle = handle;
-	    container->name = info->symbol_name;
-	    container->options = info->options;
-	    container->debug_instance = SUDO_DEBUG_INSTANCE_INITIALIZER;
-	    container->u.generic = plugin;
-	    container->debug_files = sudo_conf_debug_files(path);
-	    TAILQ_INSERT_TAIL(io_plugins, container, entries);
+	container = calloc(1, sizeof(*container));
+	if (container == NULL || (container->path = strdup(path)) == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    goto bad;
 	}
+	container->handle = handle;
+	container->name = info->symbol_name;
+	container->options = info->options;
+	container->debug_instance = SUDO_DEBUG_INSTANCE_INITIALIZER;
+	container->u.generic = plugin;
+	container->debug_files = sudo_conf_debug_files(path);
+	TAILQ_INSERT_TAIL(io_plugins, container, entries);
     }
 
     /* Zero out info strings that we now own (see above). */
@@ -264,8 +265,13 @@ static void
 free_plugin_info(struct plugin_info *info)
 {
     free(info->path);
-    free(info->options);
     free(info->symbol_name);
+    if (info->options != NULL) {
+	int i = 0;
+	while (info->options[i] != NULL)
+	    free(info->options[i++]);
+	free(info->options);
+    }
     free(info);
 }
 
@@ -294,7 +300,7 @@ sudo_load_plugins(struct plugin_container *policy_plugin,
 
     /*
      * If no policy plugin, fall back to the default (sudoers).
-     * If there is also no I/O log plugin, sudoers for that too.
+     * If there is also no I/O log plugin, use sudoers for that too.
      */
     if (policy_plugin->handle == NULL) {
 	/* Default policy plugin */
@@ -303,11 +309,16 @@ sudo_load_plugins(struct plugin_container *policy_plugin,
 	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	    goto done;
 	}
-	info->symbol_name = "sudoers_policy";
-	info->path = SUDOERS_PLUGIN;
+	info->symbol_name = strdup("sudoers_policy");
+	info->path = strdup(SUDOERS_PLUGIN);
+	if (info->symbol_name == NULL || info->path == NULL) {
+	    sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+	    free_plugin_info(info);
+	    goto done;
+	}
 	/* info->options = NULL; */
 	ret = sudo_load_plugin(policy_plugin, io_plugins, info);
-	free(info);
+	free_plugin_info(info);
 	if (!ret)
 	    goto done;
 
@@ -318,11 +329,16 @@ sudo_load_plugins(struct plugin_container *policy_plugin,
 		sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 		goto done;
 	    }
-	    info->symbol_name = "sudoers_io";
-	    info->path = SUDOERS_PLUGIN;
+	    info->symbol_name = strdup("sudoers_io");
+	    info->path = strdup(SUDOERS_PLUGIN);
+	    if (info->symbol_name == NULL || info->path == NULL) {
+		sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+		free_plugin_info(info);
+		goto done;
+	    }
 	    /* info->options = NULL; */
 	    ret = sudo_load_plugin(policy_plugin, io_plugins, info);
-	    free(info);
+	    free_plugin_info(info);
 	    if (!ret)
 		goto done;
 	}

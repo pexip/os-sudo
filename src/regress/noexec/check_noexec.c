@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Todd C. Miller <Todd.Miller@courtesan.com>
+ * Copyright (c) 2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -141,6 +141,11 @@ try_wordexp(void)
 	/* Solaris 11 wordexp() returns WRDE_ERRNO for execve() failure. */
 #endif
 	printf("%s: OK (wordexp) [%d]\n", getprogname(), rc);
+	ret = 0;
+	break;
+    case WRDE_SYNTAX:
+	/* FreeBSD returns WRDE_SYNTAX if it can't write to the shell process */
+	printf("%s: OK (wordexp) [WRDE_SYNTAX]\n", getprogname());
 	ret = 0;
 	break;
     case WRDE_CMDSUB:
