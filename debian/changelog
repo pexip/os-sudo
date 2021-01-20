@@ -1,3 +1,16 @@
+sudo (1.8.27-1+deb10u3) buster-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Sanity check size when converting the first record to TS_LOCKEXCL
+  * Heap-based buffer overflow (CVE-2021-3156)
+    - Reset valid_flags to MODE_NONINTERACTIVE for sudoedit
+    - Add sudoedit flag checks in plugin that are consistent with front-end
+    - Fix potential buffer overflow when unescaping backslashes in user_args
+    - Fix the memset offset when converting a v1 timestamp to TS_LOCKEXCL
+    - Don't assume that argv is allocated as a single flat buffer
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 20 Jan 2021 13:26:17 +0100
+
 sudo (1.8.27-1+deb10u2) buster; urgency=medium
 
   * Non-maintainer upload.
