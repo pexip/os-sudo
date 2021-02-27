@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -29,16 +31,7 @@
  */
 
 #include <config.h>
-
-#include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #if defined(HAVE_STDINT_H)
 # include <stdint.h>
 #elif defined(HAVE_INTTYPES_H)
@@ -244,8 +237,8 @@ SHA256Transform(uint32_t state[8], const uint8_t data[SHA256_BLOCK_LENGTH])
 	state[6] += g(0);
 	state[7] += h(0);
 	/* Cleanup */
-	memset_s(T, sizeof(T), 0, sizeof(T));
-	memset_s(W, sizeof(W), 0, sizeof(W));
+	explicit_bzero(T, sizeof(T));
+	explicit_bzero(W, sizeof(W));
 }
 
 #undef S0
@@ -461,8 +454,8 @@ SHA512Transform(uint64_t state[8], const uint8_t data[SHA512_BLOCK_LENGTH])
 	state[6] += g(0);
 	state[7] += h(0);
 	/* Cleanup. */
-	memset_s(T, sizeof(T), 0, sizeof(T));
-	memset_s(W, sizeof(W), 0, sizeof(W));
+	explicit_bzero(T, sizeof(T));
+	explicit_bzero(W, sizeof(W));
 }
 
 void

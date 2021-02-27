@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 1996, 1998-2005, 2010-2012, 2014-2016
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -26,16 +28,9 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <stdio.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
-#include <unistd.h>
+#include <string.h>
 #include <errno.h>
 
 #include "sudoers.h"
@@ -44,14 +39,24 @@
  * Verify that path is a normal file and executable by root.
  */
 bool
-sudo_goodpath(const char *path, struct stat *sbp)
+sudo_goodpath(const char *path, const char *runchroot, struct stat *sbp)
 {
     bool ret = false;
-    debug_decl(sudo_goodpath, SUDOERS_DEBUG_UTIL)
+    debug_decl(sudo_goodpath, SUDOERS_DEBUG_UTIL);
 
     if (path != NULL) {
+	char pathbuf[PATH_MAX];
 	struct stat sb;
 
+	if (runchroot != NULL) {
+	    const int len =
+		snprintf(pathbuf, sizeof(pathbuf), "%s%s", runchroot, path);
+	    if (len >= ssizeof(pathbuf)) {
+		errno = ENAMETOOLONG;
+		goto done;
+	    }
+	    path = pathbuf; // -V507
+	}
 	if (sbp == NULL)
 	    sbp = &sb;
 
@@ -63,6 +68,6 @@ sudo_goodpath(const char *path, struct stat *sbp)
 		errno = EACCES;
 	}
     }
-
+done:
     debug_return_bool(ret);
 }

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2007, 2013-2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,17 +23,10 @@
 
 #include <config.h>
 
-#include <sys/types.h>
+#include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRING_H */
+#include <string.h>
 #include <ctype.h>
-#include <unistd.h>
-#include <fcntl.h>
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
@@ -46,7 +41,7 @@
  * Read a line of input, honoring line continuation chars.
  * Remove comments and strip off leading and trailing spaces.
  * Returns the line length and updates the buf and bufsize pointers.
- * XXX - just use a struct w/ state, including getline buffer?
+ * XXX - just use a struct w/ state, including getdelim buffer?
  *       could also make comment char and line continuation configurable
  */
 ssize_t
@@ -56,12 +51,12 @@ sudo_parseln_v2(char **bufp, size_t *bufsizep, unsigned int *lineno, FILE *fp, i
     ssize_t len;
     char *cp, *line = NULL;
     bool continued, comment;
-    debug_decl(sudo_parseln, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_parseln, SUDO_DEBUG_UTIL);
 
     do {
 	comment = false;
 	continued = false;
-	len = getline(&line, &linesize, fp);
+	len = getdelim(&line, &linesize, '\n', fp);
 	if (len == -1)
 	    break;
 	if (lineno != NULL)

@@ -3,8 +3,9 @@
 # Test LDAP sudoOrder when converting to sudoers.
 #
 
-exec 2>&1
-./cvtsudoers -c "" -i ldif -f sudoers <<EOF
+: ${CVTSUDOERS=cvtsudoers}
+
+$CVTSUDOERS -c "" -i ldif -f sudoers <<EOF
 dn: dc=sudo,dc=ws
 objectClass: dcObject
 objectClass: organization

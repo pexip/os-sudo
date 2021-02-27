@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2009-2010, 2013-2014 Todd C. Miller <Todd.Miller@sudo.ws>
  * Copyright (c) 2009 Christian S.J. Peron
  *
@@ -18,7 +20,7 @@
 #ifndef SUDOERS_BSM_AUDIT_H
 #define	SUDOERS_BSM_AUDIT_H
 
-int	bsm_audit_success(char *argv[]);
-int	bsm_audit_failure(char *argv[], char const * const, va_list);
+int	bsm_audit_success(char *const argv[]);
+int	bsm_audit_failure(char *const argv[], const char *errmsg);
 
 #endif /* SUDOERS_BSM_AUDIT_H */

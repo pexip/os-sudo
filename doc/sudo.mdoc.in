@@ -1,5 +1,7 @@
 .\"
-.\" Copyright (c) 1994-1996, 1998-2005, 2007-2018
+.\" SPDX-License-Identifier: ISC
+.\"
+.\" Copyright (c) 1994-1996, 1998-2005, 2007-2020
 .\"	Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -22,7 +24,7 @@
 .nr BA @BAMAN@
 .nr LC @LCMAN@
 .nr PS @PSMAN@
-.Dd November 25, 2018
+.Dd September 1, 2020
 .Dt SUDO @mansectsu@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -34,7 +36,7 @@
 .Fl h | K | k | V
 .Nm sudo
 .Fl v
-.Op Fl AknS
+.Op Fl ABknS
 .if \n(BA \{\
 .Op Fl a Ar type
 .\}
@@ -44,7 +46,7 @@
 .Op Fl u Ar user
 .Nm sudo
 .Fl l
-.Op Fl AknS
+.Op Fl ABknS
 .if \n(BA \{\
 .Op Fl a Ar type
 .\}
@@ -55,7 +57,7 @@
 .Op Fl u Ar user
 .Op Ar command
 .Nm sudo
-.Op Fl AbEHnPS
+.Op Fl ABbEHnPS
 .if \n(BA \{\
 .Op Fl a Ar type
 .\}
@@ -63,9 +65,11 @@
 .if \n(LC \{\
 .Op Fl c Ar class
 .\}
+.Op Fl D Ar directory
 .Op Fl g Ar group
 .Op Fl h Ar host
 .Op Fl p Ar prompt
+.Op Fl R Ar directory
 .if \n(SL \{\
 .Op Fl r Ar role
 .Op Fl t Ar type
@@ -76,7 +80,7 @@
 .Op Fl i | s
 .Op Ar command
 .Nm sudoedit
-.Op Fl AknS
+.Op Fl ABknS
 .if \n(BA \{\
 .Op Fl a Ar type
 .\}
@@ -84,9 +88,15 @@
 .if \n(LC \{\
 .Op Fl c Ar class
 .\}
+.Op Fl D Ar directory
 .Op Fl g Ar group
 .Op Fl h Ar host
 .Op Fl p Ar prompt
+.Op Fl R Ar directory
+.if \n(SL \{\
+.Op Fl r Ar role
+.Op Fl t Ar type
+.\}
 .Op Fl T Ar timeout
 .Op Fl u Ar user
 .Ar
@@ -98,7 +108,7 @@ as the superuser or another user, as specified by the security
 policy.
 The invoking user's real
 .Pq Em not No effective
-user ID is used to determine the user name with which
+user-ID is used to determine the user name with which
 to query the security policy.
 .Pp
 .Nm
@@ -137,18 +147,34 @@ Security policies may support credential caching to allow the user
 to run
 .Nm
 again for a period of time without requiring authentication.
-The
+By default, the
 .Em sudoers
-policy caches credentials for
+policy caches credentials on a per-terminal basis for
 .Li @timeout@
-minutes, unless overridden in
-.Xr sudoers @mansectform@ .
+minutes.
+See the
+.Em timestamp_type
+and
+.Em timestamp_timeout
+options in
+.Xr sudoers @mansectform@
+for more information.
 By running
 .Nm
 with the
 .Fl v
 option, a user can update the cached credentials without running a
 .Ar command .
+.Pp
+On systems where
+.Nm
+is the primary method of gaining superuser privileges, it is imperative
+to avoid syntax errors in the security policy configuration files.
+For the default security policy,
+.Xr sudoers @mansectform@ ,
+changes to the configuration files should be made using the
+.Xr visudo @mansectsu@
+utility which will ensure that no syntax errors are introduced.
 .Pp
 When invoked as
 .Nm sudoedit ,
@@ -206,6 +232,9 @@ This option is only available on systems that support
 .Bx
 authentication.
 .\}
+.It Fl B , -bell
+Ring the bell as part of the password promp when a terminal is present.
+This option has no effect if an askpass program is used.
 .It Fl b , -background
 Run the given command in the background.
 Note that it is not possible to use shell job control to manipulate
@@ -247,7 +276,7 @@ If
 is
 .Cm - ,
 the default login class of the target user will be used.
-Otherwise, the command must be run as the superuser (user ID 0), or
+Otherwise, the command must be run as the superuser (user-ID 0), or
 .Nm
 must be run from a shell that is already running as the superuser.
 If the command is being run as a login shell, additional
@@ -258,6 +287,12 @@ This option is only available on systems with
 .Bx
 login classes.
 .\}
+.It Fl D Ar directory , Fl -chdir Ns = Ns Ar directory
+Run the command in the specified
+.Ar directory
+instead of the current working directory.
+The security policy may return an error if the user does not have
+permission to specify the working directory.
 .It Fl E , -preserve-env
 Indicates to the security policy that the user wishes to
 preserve their existing environment variables.
@@ -269,6 +304,7 @@ comma-separated list of environment variables to those preserved
 from the user's environment.
 The security policy may return an error if the user does not have
 permission to preserve the environment.
+This option may be specified multiple times.
 .It Fl e , -edit
 Edit one or more files instead of running a command.
 In lieu of a path name, the string "sudoedit" is used when consulting
@@ -324,6 +360,8 @@ If the specified file does not exist, it will be created.
 Note that unlike most commands run by
 .Em sudo ,
 the editor is run with the invoking user's environment unmodified.
+If the temporary file becomes empty after editing, the user will
+be prompted before it is installed.
 If, for some reason,
 .Nm
 is unable to update a file with its edited version, the user will
@@ -336,7 +374,7 @@ instead of the primary group specified by the target
 user's password database entry.
 The
 .Ar group
-may be either a group name or a numeric group ID
+may be either a group name or a numeric group-ID
 .Pq GID
 prefixed with the
 .Ql #
@@ -470,7 +508,7 @@ By default, the
 .Em sudoers
 policy will initialize the group vector to the list of groups the
 target user is a member of.
-The real and effective group IDs, however, are still set to match
+The real and effective group-IDs, however, are still set to match
 the target user.
 .It Fl p Ar prompt , Fl -prompt Ns = Ns Ar prompt
 Use a custom password prompt with optional escape sequences.
@@ -521,6 +559,14 @@ specified by a PAM module unless the
 .Em passprompt_override
 flag is disabled in
 .Em sudoers .
+.It Fl R Ar directory , Fl -chroot Ns = Ns Ar directory
+Change to the specified root
+.Ar directory
+(see
+.Xr chroot @mansectsu@ )
+before running the command.
+The security policy may return an error if the user does not have
+permission to specify the root directory.
 .if \n(SL \{\
 .It Fl r Ar role , Fl -role Ns = Ns Ar role
 Run the command with an SELinux security context that includes
@@ -578,7 +624,7 @@ Run the command as a user other than the default target user
 .Em root ) .
 The
 .Ar user
-may be either a user name or a numeric user ID
+may be either a user name or a numeric user-ID
 .Pq UID
 prefixed with the
 .Ql #
@@ -627,6 +673,13 @@ option indicates that
 should stop processing command line arguments.
 .El
 .Pp
+Options that take a value may only be specified once unless
+otherwise indicated in the description.
+This is to help guard against problems caused by poorly written
+scripts that invoke
+.Nm sudo
+with user-controlled input.
+.Pp
 Environment variables to be set for the command may also be passed
 on the command line in the form of
 .Ar VAR Ns = Ns Ar value ,
@@ -666,11 +719,11 @@ option was specified).
 The following parameters may be specified by security policy:
 .Bl -bullet -width 1n
 .It
-real and effective user ID
+real and effective user-ID
 .It
-real and effective group ID
+real and effective group-ID
 .It
-supplementary group IDs
+supplementary group-IDs
 .It
 the environment list
 .It
@@ -765,6 +818,10 @@ Note that
 and
 .Em pam_setcred
 are enabled by default on systems using PAM.
+.Pp
+On systems that use PAM, the security policy's close function
+is responsible for closing the PAM session.
+It may also log the command's exit status.
 .Ss Signal handling
 When the command is run as a child of the
 .Nm
@@ -848,13 +905,13 @@ or compiled directly into the
 binary.
 If no
 .Xr sudo.conf @mansectform@
-file is present, or it contains no
+file is present, or if it doesn't contain any
 .Li Plugin
 lines,
 .Nm
-will use the traditional
-.Em sudoers
-security policy and I/O logging.
+will use
+.Xr sudoers @mansectform@
+for the policy, auditing and I/O logging plugins.
 See the
 .Xr sudo.conf @mansectform@
 manual for details of the
@@ -963,7 +1020,7 @@ To prevent the disclosure of potentially sensitive information,
 disables core dumps by default while it is executing (they are
 re-enabled for the command that is run).
 This historical practice dates from a time when most operating
-systems allowed setuid processes to dump core by default.
+systems allowed set-user-ID processes to dump core by default.
 To aid in debugging
 .Nm
 crashes, you may wish to re-enable core dumps by setting
@@ -1056,13 +1113,15 @@ if no terminal is available or if the
 .Fl A
 option is specified.
 .It Ev SUDO_COMMAND
-Set to the command run by sudo.
+Set to the command run by sudo, including command line arguments.
+The command line arguments are truncated at 4096 characters to
+prevent a potential execution error.
 .It Ev SUDO_EDITOR
 Default editor to use in
 .Fl e
 (sudoedit) mode.
 .It Ev SUDO_GID
-Set to the group ID of the user who invoked sudo.
+Set to the group-ID of the user who invoked sudo.
 .It Ev SUDO_PROMPT
 Used as the default password prompt unless
 the
@@ -1073,7 +1132,7 @@ If set,
 .Ev PS1
 will be set to its value for the program being run.
 .It Ev SUDO_UID
-Set to the user ID of the user who invoked sudo.
+Set to the user-ID of the user who invoked sudo.
 .It Ev SUDO_USER
 Set to the login name of the user who invoked sudo.
 .It Ev USER
@@ -1169,7 +1228,7 @@ for more information.
 was not run with root privileges.
 The
 .Nm
-binary must be owned by the root user and have the Set-user-ID bit set.
+binary must be owned by the root user and have the set-user-ID bit set.
 Also, it must not be located on a file system mounted with the
 .Sq nosuid
 option or on an NFS file system that maps uid 0 to an unprivileged uid.
@@ -1204,15 +1263,18 @@ This may happen if no terminal is available (or the
 .Fl S
 option is specified) and the standard input has been redirected from
 .Pa /dev/null .
-.It Li no tty present and no askpass program specified
+.It Li a terminal is required to read the password
 .Nm
-needs to read the password but there is no mechanism available to do so.
+needs to read the password but there is no mechanism available for it
+to do so.
 A terminal is not present to read the password from,
 .Nm
 has not been configured to read from the standard input,
-and no askpass program has been specified either via the
-.Fl A
-option or the
+the
+.Fl S
+option was not used, and no askpass helper has been specified either via the
+.Xr sudo.conf @mansectform@
+file or the
 .Ev SUDO_ASKPASS
 environment variable.
 .It Li no writable temporary directory found
@@ -1225,7 +1287,7 @@ was not run with root privileges.
 The
 .Nm
 binary does not have the correct owner or permissions.
-It must be owned by the root user and have the Set-user-ID bit set.
+It must be owned by the root user and have the set-user-ID bit set.
 .It Li sudoedit is not supported on this platform
 It is only possible to run
 .Nm sudoedit
@@ -1234,7 +1296,7 @@ on systems that support setting the effective user-ID.
 The user did not enter a password before the password timeout
 (5 minutes by default) expired.
 .It Li you do not exist in the passwd database
-Your user ID does not appear in the system passwd database.
+Your user-ID does not appear in the system passwd database.
 .It Li you may not specify environment variables in edit mode
 It is only possible to specify environment variables when running
 a command.
@@ -1248,6 +1310,7 @@ When editing a file, the editor is run with the user's environment unmodified.
 .Xr sudo.conf @mansectform@ ,
 .Xr sudo_plugin @mansectform@ ,
 .Xr sudoers @mansectform@ ,
+.Xr sudoers_timestamp @mansectform@ ,
 .Xr sudoreplay @mansectsu@ ,
 .Xr visudo @mansectsu@
 .Sh HISTORY
@@ -1297,9 +1360,9 @@ section for more information.
 .Pp
 Running shell scripts via
 .Nm
-can expose the same kernel bugs that make setuid shell scripts
+can expose the same kernel bugs that make set-user-ID shell scripts
 unsafe on some operating systems (if your OS has a /dev/fd/ directory,
-setuid shell scripts are generally safe).
+set-user-ID shell scripts are generally safe).
 .Sh BUGS
 If you feel you have found a bug in
 .Nm ,

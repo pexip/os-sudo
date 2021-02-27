@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 1996, 1998-2005, 2007-2015
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -30,12 +32,7 @@
 #include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -56,7 +53,7 @@ addr_matches_if(const char *n)
     unsigned int j;
 #endif
     unsigned int family;
-    debug_decl(addr_matches_if, SUDOERS_DEBUG_MATCH)
+    debug_decl(addr_matches_if, SUDOERS_DEBUG_MATCH);
 
 #ifdef HAVE_STRUCT_IN6_ADDR
     if (inet_pton(AF_INET6, n, &addr.ip6) == 1) {
@@ -109,7 +106,7 @@ addr_matches_if_netmask(const char *n, const char *m)
 #endif
     unsigned int family;
     const char *errstr;
-    debug_decl(addr_matches_if, SUDOERS_DEBUG_MATCH)
+    debug_decl(addr_matches_if, SUDOERS_DEBUG_MATCH);
 
 #ifdef HAVE_STRUCT_IN6_ADDR
     if (inet_pton(AF_INET6, n, &addr.ip6) == 1)
@@ -130,7 +127,7 @@ addr_matches_if_netmask(const char *n, const char *m)
 		debug_return_bool(false);
 	    }
 	} else {
-	    i = strtonum(m, 1, 32, &errstr);
+	    i = sudo_strtonum(m, 1, 32, &errstr);
 	    if (errstr != NULL) {
 		sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
 		    "IPv4 netmask %s: %s", m, errstr);
@@ -143,7 +140,7 @@ addr_matches_if_netmask(const char *n, const char *m)
 #ifdef HAVE_STRUCT_IN6_ADDR
     else {
 	if (inet_pton(AF_INET6, m, &mask.ip6) != 1) {
-	    j = strtonum(m, 1, 128, &errstr);
+	    j = sudo_strtonum(m, 1, 128, &errstr);
 	    if (errstr != NULL) {
 		sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_LINENO,
 		    "IPv6 netmask %s: %s", m, errstr);
@@ -195,7 +192,7 @@ addr_matches(char *n)
 {
     char *m;
     bool rc;
-    debug_decl(addr_matches, SUDOERS_DEBUG_MATCH)
+    debug_decl(addr_matches, SUDOERS_DEBUG_MATCH);
 
     /* If there's an explicit netmask, use it. */
     if ((m = strchr(n, '/'))) {

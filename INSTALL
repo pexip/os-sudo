@@ -28,7 +28,7 @@ Simple sudo installation
 For most systems and configurations it is possible simply to:
 
     0) If you are upgrading from a previous version of sudo
-       please read the info in the UPGRADE file before proceeding.
+       please read the info in the doc/UPGRADE file before proceeding.
 
     1) Read the `OS dependent notes' section for any particular
        "gotchas" relating to your operating system.
@@ -328,7 +328,7 @@ Optional features:
 
   --with-interfaces=no, --without-interfaces
 	This option keeps sudo from trying to glean the ip address
-	from each attached Ethernet interface.  It is only useful
+	from each attached network interface.  It is only useful
 	on a machine where sudo's interface reading support does
 	not work, which may be the case on some SysV-based OS's
 	using STREAMS.
@@ -369,6 +369,17 @@ Optional features:
 	Generate a sample PVS-Studio.cfg file based on the compiler and
 	platform type.	The "pvs-studio" Makefile target can then be
 	used if PVS-Studio is installed.
+
+  --enable-python
+	Enable support for sudo plugins written in Python 3.
+        This requires a Python 3 development environment (including
+        Python 3 header files).
+
+  --disable-log-server
+	Disable building the sudo_logsrvd log server.
+
+  --disable-log-client
+	Disable sudoers support for using the sudo_logsrvd log server.
 
 Operating system-specific options:
   --disable-setreuid
@@ -545,14 +556,16 @@ Authentication options:
   --enable-gcrypt[=DIR]
         Use GNU crypt's SHA-2 message digest functions instead of the
         ones bundled with sudo (or in the system's C library).
-        If specified, DIR should contain include and lib directories
-        with gcrypt.h and libgcrypt respectively.
+        If specified, DIR should contain the GNU crypt include and
+        lib directories.  This option is ignored when the
+        --enable-openssl option is also specified.
 
   --enable-openssl[=DIR]
-        Use OpenSSL's SHA-2 message digest functions instead of the
-        ones bundled with sudo (or in the system's C library).
-        If specified, DIR should contain include and lib directories
-        with openssl/sha.h and libcrypto respectively.
+        Use OpenSSL's TLS and SHA-2 message digest functions.
+        By default, sudo does not support TLS and will use either its
+        own SHA-2 functions or the ones in the system's C library.
+        If specified, DIR should contain the OpenSSL include and
+        lib directories.
 
 Development options:
   --enable-env-debug
@@ -561,10 +574,11 @@ Development options:
         become corrupted.
 
   --enable-warnings
-	Enable compiler warnings when building sudo with gcc.
+	Enable compiler warnings when building sudo with gcc or clang.
 
   --enable-werror
-	Enable the -Werror compiler option when building sudo with gcc.
+        Enable the -Werror compiler option when building sudo with
+        gcc or clang.
 
   --with-devel
         Configure development options.  This will enable compiler warnings
@@ -670,19 +684,20 @@ Options that set runtime-changeable default values:
   --with-editor=PATH
 	Specify the default editor path for use by visudo.  This may be a
 	single path name or a colon-separated list of editors.  In the latter
-	case, visudo will choose the editor that matches the user's VISUAL
-	or EDITOR environment variables or the first editor in the list that
-	exists.  The default is the path to vi on your system.
+	case, visudo will choose the editor that matches the user's SUDO_EDITOR,
+	VISUAL or EDITOR environment variable, or the first editor in the list
+	that exists.  The default is the path to vi on your system.
 	Sudoers option: editor
 
-  --with-env-editor
-	Makes visudo consult the VISUAL and EDITOR environment variables before
-	falling back on the default editor list (as specified by --with-editor).
-	Note that this may create a security hole as it allows the user to
-	run any arbitrary command as root without logging.  A safer alternative
-	is to use a colon-separated list of editors with the --with-editor
-	option.  visudo will then only use the VISUAL or EDITOR variables
-	if they match a value specified via --with-editor.
+  --with-env-editor=no, --without-env-editor
+	By default, visudo will consult the SUDO_EDITOR, VISUAL and EDITOR
+	environment variables before falling back on the default editor list
+	(as specified by --with-editor).  visudo is typically run as root so
+	this option may allow a user with visudo privileges to run arbitrary
+	commands as root without logging.  Some sites may with to disable this
+	and use a colon-separated list of "safe" editors with the --with-editor
+	option.  visudo will then only use the SUDO_EDITOR, VISUAL or EDITOR
+	variables if they match a value specified via --with-editor.
 	Sudoers option: env_editor
 
   --with-exempt=GROUP
@@ -837,11 +852,11 @@ Options that set runtime-changeable default values:
 	Sudoers option: runas_default
 
   --with-secure-path[=PATH]
-	Path used for every command run from sudo(8).  If you don't trust the
-	people running sudo to have a sane PATH environment variable you may
-	want to use this.  Another use is if you want to have the "root path"
-	be separate from the "user path."  You will need to customize the path
-	for your site.  NOTE: this is not applied to users in the group
+	Path used for every command run from sudo(8).  If you don't trust
+	users to have a reasonable PATH environment variable you may want
+	to use this.  Another use is if you want to have the "root path"
+	be separate from the "user path."  You will need to customize the
+	path for your site.  NOTE: this is not applied to users in the group
 	specified by --with-exemptgroup.  If you do not specify a path,
 	"/bin:/usr/ucb:/usr/bin:/usr/sbin:/sbin:/usr/etc:/etc" is used.
 	Sudoers option: secure_path
@@ -905,18 +920,13 @@ HP-UX:
 
     sudo	session	required	libpam_hpsec.so.1 bypass_umask
 
-    If every command run via sudo displays information about the last
-    successful login and the last authentication failure you should
-    make use an /etc/pam.conf line like:
-
-    sudo	session	required	libpam_hpsec.so.1 bypass_umask bypass_last_login
-
 Linux:
     PAM and LDAP headers are not installed by default on most Linux
-    systems.  You will need to install the "pam-dev" package if
-    /usr/include/security/pam_appl.h is not present on your system.
-    If you wish to build with LDAP support you will also need the
-    openldap-devel package.
+    systems.  You will need to install the "pam-dev" (rpm) or
+    libpam0g-dev (deb) package if /usr/include/security/pam_appl.h
+    is not present on your system.  If you wish to build with LDAP
+    support you will also need the "openldap-devel" (rpm) or
+    "libldap2-dev" (deb) package.
 
 Mac OS X:
     The pseudo-tty support in the Mac OS X kernel has bugs related

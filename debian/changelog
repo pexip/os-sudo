@@ -1,7 +1,31 @@
-sudo (1.8.27-1+deb10u3) buster-security; urgency=high
+sudo (1.9.5p2-3) unstable; urgency=medium
 
-  * Non-maintainer upload by the Security Team.
-  * Sanity check size when converting the first record to TS_LOCKEXCL
+  * new maintainer team and uploaders (Closes: #976244)
+    * sudo is now team maintained
+    * add Uploaders field
+    * move salsa repo to team-sudo group
+  * refresh patches
+  * Adapt README.LDAP to the actual state of sudo-ldap (Closes: #442871)
+  * add Apport hook.
+    Thanks to Balint Reczey (Closes: 881671)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sat, 27 Feb 2021 09:28:03 +0100
+
+sudo (1.9.5p2-2) unstable; urgency=medium
+
+  * patch from upstream repo to fix NO_ROOT_MAILER
+
+ -- Bdale Garbee <bdale@gag.com>  Fri, 29 Jan 2021 18:12:32 -0700
+
+sudo (1.9.5p2-1) unstable; urgency=high
+
+  * new upstream version, addresses CVE-2021-3156
+
+ -- Bdale Garbee <bdale@gag.com>  Tue, 26 Jan 2021 21:20:05 -0700
+
+sudo (1.9.5p1-1.1) unstable; urgency=high
+
+  * Non-maintainer upload.
   * Heap-based buffer overflow (CVE-2021-3156)
     - Reset valid_flags to MODE_NONINTERACTIVE for sudoedit
     - Add sudoedit flag checks in plugin that are consistent with front-end
@@ -9,23 +33,111 @@ sudo (1.8.27-1+deb10u3) buster-security; urgency=high
     - Fix the memset offset when converting a v1 timestamp to TS_LOCKEXCL
     - Don't assume that argv is allocated as a single flat buffer
 
- -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 20 Jan 2021 13:26:17 +0100
+ -- Salvatore Bonaccorso <carnil@debian.org>  Wed, 20 Jan 2021 10:11:47 +0100
 
-sudo (1.8.27-1+deb10u2) buster; urgency=medium
+sudo (1.9.5p1-1) unstable; urgency=medium
+
+  * new upstream version, closes: #980028
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 13 Jan 2021 01:09:19 -0700
+
+sudo (1.9.5-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Mon, 11 Jan 2021 15:15:48 -0700
+
+sudo (1.9.4p2-2) unstable; urgency=medium
+
+  * always use /bin/mv to ensure reproducible builds whether built on a
+    usrmerge or non-usrmerge system, closes: #976307
+
+ -- Bdale Garbee <bdale@gag.com>  Sun, 03 Jan 2021 09:11:13 -0700
+
+sudo (1.9.4p2-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Sun, 20 Dec 2020 17:43:54 -0700
+
+sudo (1.9.4p1-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Thu, 17 Dec 2020 17:35:55 -0700
+
+sudo (1.9.4-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Tue, 01 Dec 2020 22:10:03 -0500
+
+sudo (1.9.3p1-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Thu, 24 Sep 2020 11:10:02 -0600
+
+sudo (1.9.3-1) unstable; urgency=medium
+
+  * new upstream version
+  * make the comment match the text in default sudoers, closes: #964922
+  * enable zlib, closes: #846077
+
+ -- Bdale Garbee <bdale@gag.com>  Mon, 21 Sep 2020 17:11:30 -0600
+
+sudo (1.9.1-2) unstable; urgency=medium
+
+  * change # to @ on includedir in default sudoers to reduce confusion with
+    a comment, such as in 964922
+
+ -- Bdale Garbee <bdale@gag.com>  Sun, 12 Jul 2020 09:52:08 -0600
+
+sudo (1.9.1-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Fri, 19 Jun 2020 15:44:09 -0600
+
+sudo (1.9.0-1) unstable; urgency=medium
+
+  * new upstream version, closes: #669687, #571621, #734752
+
+ -- Bdale Garbee <bdale@gag.com>  Wed, 13 May 2020 18:34:59 -0600
+
+sudo (1.8.31p1-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Thu, 19 Mar 2020 15:47:17 -0600
+
+sudo (1.8.31-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Sat, 01 Feb 2020 23:07:09 -0800
+
+sudo (1.8.29-1) unstable; urgency=medium
+
+  * new upstream version
+  * make --libexecdir use /usr/lib instead of /usr/lib/sudo, closes: #943313
+
+ -- Bdale Garbee <bdale@gag.com>  Mon, 28 Oct 2019 19:27:42 -0600
+
+sudo (1.8.28p1-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Bdale Garbee <bdale@gag.com>  Tue, 22 Oct 2019 16:13:34 -0600
+
+sudo (1.8.27-1.1) unstable; urgency=high
 
   * Non-maintainer upload.
-  * Fix a buffer overflow when pwfeedback is enabled and input is a not a tty
-    (CVE-2019-18634) (Closes: #950371)
-
- -- Salvatore Bonaccorso <carnil@debian.org>  Sun, 02 Feb 2020 08:41:42 +0100
-
-sudo (1.8.27-1+deb10u1) buster-security; urgency=high
-
-  * Non-maintainer upload by the Security Team.
   * Treat an ID of -1 as invalid since that means "no change" (CVE-2019-14287)
+    (Closes: #942322)
   * Fix test failure in plugins/sudoers/regress/testsudoers/test5.sh
 
- -- Salvatore Bonaccorso <carnil@debian.org>  Sat, 12 Oct 2019 15:49:01 +0200
+ -- Salvatore Bonaccorso <carnil@debian.org>  Mon, 14 Oct 2019 21:10:58 +0200
 
 sudo (1.8.27-1) unstable; urgency=medium
 

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2010-2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -20,14 +22,7 @@
  */
 
 #include <config.h>
-
-#include <sys/types.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
+#include <string.h>
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
@@ -39,7 +34,7 @@
 int
 sudo_strtobool_v1(const char *str)
 {
-    debug_decl(sudo_strtobool, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_strtobool, SUDO_DEBUG_UTIL);
 
     switch (*str) {
 	case '0':

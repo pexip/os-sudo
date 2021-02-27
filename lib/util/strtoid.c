@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2013-2016 Todd C. Miller <Todd.Miller@sudo.ws>
+ * SPDX-License-Identifier: ISC
+ *
+ * Copyright (c) 2013-2020 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,15 +23,8 @@
 
 #include <config.h>
 
-#include <sys/types.h>
+#include <sys/types.h>			/* for id_t */
 
-#include <stdio.h>
-#include <stdlib.h>
-#if defined(HAVE_STDINT_H)
-# include <stdint.h>
-#elif defined(HAVE_INTTYPES_H)
-# include <inttypes.h>
-#endif
 #ifdef HAVE_STDBOOL_H
 # include <stdbool.h>
 #else
@@ -39,12 +34,33 @@
 #include <errno.h>
 #include <limits.h>
 
-#define DEFAULT_TEXT_DOMAIN	"sudo"
-#include "sudo_gettext.h"	/* must be included before sudo_compat.h */
-
 #include "sudo_compat.h"
 #include "sudo_debug.h"
+#include "sudo_gettext.h"
 #include "sudo_util.h"
+
+/* strtoid.c (not exported) */
+long long sudo_strtonumx(const char *str, long long minval, long long maxval, char **ep, const char **errstrp);
+
+/*
+ * Make sure that the ID ends with a valid separator char.
+ */
+static bool
+valid_separator(const char *p, const char *ep, const char *sep)
+{
+    bool valid = false;
+
+    if (ep != p) {
+	/* check for valid separator (including '\0') */
+	if (sep == NULL)
+	    sep = "";
+	do {
+	    if (*ep == *sep)
+		valid = true;
+	} while (*sep++ != '\0');
+    }
+    return valid;
+}
 
 /*
  * Parse a uid/gid in string form.
@@ -53,124 +69,43 @@
  * On success, returns the parsed ID and clears errstr.
  * On error, returns 0 and sets errstr.
  */
-#if SIZEOF_ID_T == SIZEOF_LONG_LONG
 id_t
-sudo_strtoid_v1(const char *p, const char *sep, char **endp, const char **errstr)
+sudo_strtoidx_v1(const char *p, const char *sep, char **endp, const char **errstrp)
 {
+    const char *errstr;
     char *ep;
-    id_t ret = 0;
-    long long llval;
-    bool valid = false;
-    debug_decl(sudo_strtoid, SUDO_DEBUG_UTIL)
+    id_t ret;
+    debug_decl(sudo_strtoid, SUDO_DEBUG_UTIL);
 
-    /* skip leading space so we can pick up the sign, if any */
-    while (isspace((unsigned char)*p))
-	p++;
-    if (sep == NULL)
-	sep = "";
-    errno = 0;
-    llval = strtoll(p, &ep, 10);
-    if (ep != p) {
-	/* check for valid separator (including '\0') */
-	do {
-	    if (*ep == *sep)
-		valid = true;
-	} while (*sep++ != '\0');
-    }
-    if (!valid) {
-	if (errstr != NULL)
-	    *errstr = N_("invalid value");
-	errno = EINVAL;
-	goto done;
-    }
-    if (errno == ERANGE) {
-	if (errstr != NULL) {
-	    if (llval == LLONG_MAX)
-		*errstr = N_("value too large");
-	    else
-		*errstr = N_("value too small");
+    ret = sudo_strtonumx(p, INT_MIN, UINT_MAX, &ep, &errstr);
+    if (errstr == NULL) {
+	/*
+	 * Disallow id -1 (UINT_MAX), which means "no change"
+	 * and check for a valid separator (if specified).
+	 */
+	if (ret == (id_t)-1 || ret == (id_t)UINT_MAX || !valid_separator(p, ep, sep)) {
+	    errstr = N_("invalid value");
+	    errno = EINVAL;
+	    ret = 0;
 	}
-	goto done;
     }
-    ret = (id_t)llval;
-    if (errstr != NULL)
-	*errstr = NULL;
+    if (errstrp != NULL)
+	*errstrp = errstr;
     if (endp != NULL)
 	*endp = ep;
-done:
     debug_return_id_t(ret);
 }
-#else
-id_t
-sudo_strtoid_v1(const char *p, const char *sep, char **endp, const char **errstr)
-{
-    char *ep;
-    id_t ret = 0;
-    bool valid = false;
-    debug_decl(sudo_strtoid, SUDO_DEBUG_UTIL)
 
-    /* skip leading space so we can pick up the sign, if any */
-    while (isspace((unsigned char)*p))
-	p++;
-    if (sep == NULL)
-	sep = "";
-    errno = 0;
-    if (*p == '-') {
-	long lval = strtol(p, &ep, 10);
-	if (ep != p) {
-	    /* check for valid separator (including '\0') */
-	    do {
-		if (*ep == *sep)
-		    valid = true;
-	    } while (*sep++ != '\0');
-	}
-	if (!valid) {
-	    if (errstr != NULL)
-		*errstr = N_("invalid value");
-	    errno = EINVAL;
-	    goto done;
-	}
-	if ((errno == ERANGE && lval == LONG_MAX) || lval > INT_MAX) {
-	    errno = ERANGE;
-	    if (errstr != NULL)
-		*errstr = N_("value too large");
-	    goto done;
-	}
-	if ((errno == ERANGE && lval == LONG_MIN) || lval < INT_MIN) {
-	    errno = ERANGE;
-	    if (errstr != NULL)
-		*errstr = N_("value too small");
-	    goto done;
-	}
-	ret = (id_t)lval;
-    } else {
-	unsigned long ulval = strtoul(p, &ep, 10);
-	if (ep != p) {
-	    /* check for valid separator (including '\0') */
-	    do {
-		if (*ep == *sep)
-		    valid = true;
-	    } while (*sep++ != '\0');
-	}
-	if (!valid) {
-	    if (errstr != NULL)
-		*errstr = N_("invalid value");
-	    errno = EINVAL;
-	    goto done;
-	}
-	if ((errno == ERANGE && ulval == ULONG_MAX) || ulval > UINT_MAX) {
-	    errno = ERANGE;
-	    if (errstr != NULL)
-		*errstr = N_("value too large");
-	    goto done;
-	}
-	ret = (id_t)ulval;
-    }
-    if (errstr != NULL)
-	*errstr = NULL;
-    if (endp != NULL)
-	*endp = ep;
-done:
-    debug_return_id_t(ret);
+/* Backward compatibility */
+id_t
+sudo_strtoid_v1(const char *p, const char *sep, char **endp, const char **errstrp)
+{
+    return sudo_strtoidx_v1(p, sep, endp, errstrp);
 }
-#endif /* SIZEOF_ID_T == 8 */
+
+/* Simplified interface */
+id_t
+sudo_strtoid_v2(const char *p, const char **errstrp)
+{
+    return sudo_strtoidx_v1(p, NULL, NULL, errstrp);
+}

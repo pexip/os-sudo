@@ -1,6 +1,6 @@
 --- a/plugins/sudoers/ins_classic.h
 +++ b/plugins/sudoers/ins_classic.h
-@@ -30,7 +30,7 @@
+@@ -32,7 +32,7 @@
      "Where did you learn to type?",
      "Are you on drugs?",
      "My pet ferret can type better than you!",

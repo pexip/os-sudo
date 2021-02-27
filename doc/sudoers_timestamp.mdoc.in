@@ -1,5 +1,7 @@
 .\"
-.\" Copyright (c) 2017-2018 Todd C. Miller <Todd.Miller@sudo.ws>
+.\" SPDX-License-Identifier: ISC
+.\"
+.\" Copyright (c) 2017-2020 Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -13,7 +15,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd October 7, 2018
+.Dd October 20, 2019
 .Dt SUDOERS_TIMESTAMP @mansectform@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -107,13 +109,13 @@ and
 .Li TS_ANYUID ,
 which is used only when matching records.
 .It auth_uid
-The user ID that was used for authentication.
+The user-ID that was used for authentication.
 Depending on the value of the
 .Em rootpw ,
 .Em runaspw
 and
 .Em targetpw
-options, the user ID may be that of the invoking user, the root user,
+options, the user-ID may be that of the invoking user, the root user,
 the default runas user or the target user.
 .It sid
 The ID of the user's terminal session, if present.
@@ -210,7 +212,7 @@ time was used as the time stamp.
 Later versions of
 .Nm sudo
 added restrictions on the ownership of the time stamp files and
-directory as well as sanity checks on the time stamp itself.
+directory as well as checks on the validity of the time stamp itself.
 Notable changes were introduced in the following
 .Nm sudo
 versions:
@@ -227,7 +229,7 @@ The target user name was added to the time stamp file name when the
 option was set.
 .It 1.7.3
 Information about the terminal device was stored in
-tty-based time stamp files for sanity checking.
+tty-based time stamp files for validity checks.
 This included the terminal device numbers, inode number and, on systems
 where it was not updated when the device was written to, the inode change time.
 This helped prevent re-use of the time stamp file after logout.

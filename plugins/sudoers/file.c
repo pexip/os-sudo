@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2004-2005, 2007-2018 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,20 +23,8 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
-#include <unistd.h>
-#include <ctype.h>
-#include <grp.h>
-#include <pwd.h>
-#include <time.h>
 
 #include "sudoers.h"
 #include "parse.h"
@@ -49,7 +39,7 @@ struct sudo_file_handle {
 static int
 sudo_file_close(struct sudo_nss *nss)
 {
-    debug_decl(sudo_file_close, SUDOERS_DEBUG_NSS)
+    debug_decl(sudo_file_close, SUDOERS_DEBUG_NSS);
     struct sudo_file_handle *handle = nss->handle;
 
     if (handle != NULL) {
@@ -67,7 +57,7 @@ sudo_file_close(struct sudo_nss *nss)
 static int
 sudo_file_open(struct sudo_nss *nss)
 {
-    debug_decl(sudo_file_open, SUDOERS_DEBUG_NSS)
+    debug_decl(sudo_file_open, SUDOERS_DEBUG_NSS);
     struct sudo_file_handle *handle;
 
     if (def_ignore_local_sudoers)
@@ -83,7 +73,7 @@ sudo_file_open(struct sudo_nss *nss)
     if (handle != NULL) {
 	handle->fp = open_sudoers(sudoers_file, false, NULL);
 	if (handle->fp != NULL) {
-	    init_parse_tree(&handle->parse_tree);
+	    init_parse_tree(&handle->parse_tree, NULL, NULL);
 	} else {
 	    free(handle);
 	    handle = NULL;
@@ -99,8 +89,9 @@ sudo_file_open(struct sudo_nss *nss)
 static struct sudoers_parse_tree *
 sudo_file_parse(struct sudo_nss *nss)
 {
-    debug_decl(sudo_file_close, SUDOERS_DEBUG_NSS)
+    debug_decl(sudo_file_close, SUDOERS_DEBUG_NSS);
     struct sudo_file_handle *handle = nss->handle;
+    int error;
 
     if (handle == NULL || handle->fp == NULL) {
 	sudo_debug_printf(SUDO_DEBUG_ERROR, "%s: called with NULL %s",
@@ -109,14 +100,19 @@ sudo_file_parse(struct sudo_nss *nss)
     }
 
     sudoersin = handle->fp;
-    if (sudoersparse() != 0 || parse_error) {
+    error = sudoersparse();
+    if (error || parse_error) {
 	if (errorlineno != -1) {
-	    log_warningx(SLOG_SEND_MAIL, N_("parse error in %s near line %d"),
-		errorfile, errorlineno);
+	    log_warningx(SLOG_SEND_MAIL|SLOG_NO_STDERR,
+		N_("parse error in %s near line %d"), errorfile, errorlineno);
 	} else {
-	    log_warningx(SLOG_SEND_MAIL, N_("parse error in %s"), errorfile);
+	    log_warningx(SLOG_SEND_MAIL|SLOG_NO_STDERR,
+		N_("parse error in %s"), errorfile);
 	}
-	debug_return_ptr(NULL);
+	if (error || !sudoers_recovery) {
+	    /* unrecoverable error */
+	    debug_return_ptr(NULL);
+	}
     }
 
     /* Move parsed sudoers policy to nss handle. */
@@ -131,7 +127,7 @@ sudo_file_parse(struct sudo_nss *nss)
 static int
 sudo_file_query(struct sudo_nss *nss, struct passwd *pw)
 {
-    debug_decl(sudo_file_query, SUDOERS_DEBUG_NSS)
+    debug_decl(sudo_file_query, SUDOERS_DEBUG_NSS);
     debug_return_int(0);
 }
 
@@ -141,7 +137,7 @@ sudo_file_query(struct sudo_nss *nss, struct passwd *pw)
 static int
 sudo_file_getdefs(struct sudo_nss *nss)
 {
-    debug_decl(sudo_file_getdefs, SUDOERS_DEBUG_NSS)
+    debug_decl(sudo_file_getdefs, SUDOERS_DEBUG_NSS);
     debug_return_int(0);
 }
 

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 1999, 2009-2011, 2013-2015, 2017
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -22,9 +24,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <time.h>
 
 #include "sudo_compat.h"

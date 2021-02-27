@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2005,2008,2010-2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -25,18 +27,11 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <pwd.h>
 #include <grp.h>
 
 #include "sudo_compat.h"
@@ -69,8 +64,12 @@ mysetgrent(void)
 {
     if (grf == NULL) {
 	grf = fopen(grfile, "r");
-	if (grf != NULL)
-	    (void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	if (grf != NULL) {
+	    if (fcntl(fileno(grf), F_SETFD, FD_CLOEXEC) == -1) {
+		fclose(grf);
+		grf = NULL;
+	    }
+	}
     } else {
 	rewind(grf);
     }
@@ -114,7 +113,7 @@ next_entry:
     if ((colon = strchr(cp = colon, ':')) == NULL)
 	goto next_entry;
     *colon++ = '\0';
-    id = sudo_strtoid(cp, NULL, NULL, &errstr);
+    id = sudo_strtoid(cp, &errstr);
     if (errstr != NULL)
 	goto next_entry;
     gr.gr_gid = (gid_t)id;
@@ -144,7 +143,10 @@ mygetgrnam(const char *name)
     if (grf == NULL) {
 	if ((grf = fopen(grfile, "r")) == NULL)
 	    return NULL;
-	(void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	if (fcntl(fileno(grf), F_SETFD, FD_CLOEXEC) == -1) {
+	    fclose(grf);
+	    return NULL;
+	}
     } else {
 	rewind(grf);
     }
@@ -167,7 +169,10 @@ mygetgrgid(gid_t gid)
     if (grf == NULL) {
 	if ((grf = fopen(grfile, "r")) == NULL)
 	    return NULL;
-	(void)fcntl(fileno(grf), F_SETFD, FD_CLOEXEC);
+	if (fcntl(fileno(grf), F_SETFD, FD_CLOEXEC) == -1) {
+	    fclose(grf);
+	    return NULL;
+	}
     } else {
 	rewind(grf);
     }

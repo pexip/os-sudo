@@ -7,11 +7,9 @@ Subject: [PATCH] Whitelist DPKG_COLORS environment variable
  plugins/sudoers/env.c | 1 +
  1 file changed, 1 insertion(+)
 
-diff --git a/plugins/sudoers/env.c b/plugins/sudoers/env.c
-index 9065250..c037bd8 100644
 --- a/plugins/sudoers/env.c
 +++ b/plugins/sudoers/env.c
-@@ -188,6 +188,7 @@ static const char *initial_checkenv_table[] = {
+@@ -216,6 +216,7 @@ static const char *initial_checkenv_tabl
  static const char *initial_keepenv_table[] = {
      "COLORS",
      "DISPLAY",
@@ -19,6 +17,3 @@ index 9065250..c037bd8 100644
      "HOSTNAME",
      "KRB5CCNAME",
      "LS_COLORS",
--- 
-2.8.1
-
