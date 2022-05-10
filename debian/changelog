@@ -1,3 +1,9 @@
+sudo (1.8.27-1+deb10u3pexip2) pexip; urgency=medium
+
+  * Add use_pty to settings
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Tue, 10 May 2022 11:10:39 +0100
+
 sudo (1.8.27-1+deb10u3pexip1) pexip; urgency=medium
 
   * New upstream release

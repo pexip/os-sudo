@@ -8,6 +8,7 @@
 #
 Defaults	env_reset
 Defaults	mail_badpass
+Defaults	use_pty
 Defaults	secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # Ensure the environment gets the default language and encoding values
