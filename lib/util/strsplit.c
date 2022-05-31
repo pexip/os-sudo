@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,13 +23,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <grp.h>
-
 #include "sudo_compat.h"
 #include "sudo_debug.h"
 #include "sudo_util.h"
@@ -40,7 +35,7 @@ const char *
 sudo_strsplit_v1(const char *str, const char *endstr, const char *sep, const char **last)
 {
     const char *cp, *s;
-    debug_decl(sudo_strsplit, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_strsplit, SUDO_DEBUG_UTIL);
 
     /* If no str specified, use last ptr (if any). */
     if (str == NULL)

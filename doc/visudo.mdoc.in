@@ -1,5 +1,7 @@
 .\"
-.\" Copyright (c) 1996,1998-2005, 2007-2018
+.\" SPDX-License-Identifier: ISC
+.\"
+.\" Copyright (c) 1996,1998-2005, 2007-2020
 .\"	Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -18,7 +20,7 @@
 .\" Agency (DARPA) and Air Force Research Laboratory, Air Force
 .\" Materiel Command, USAF, under agreement number F39502-99-1-0512.
 .\"
-.Dd December 24, 2018
+.Dd August 27, 2020
 .Dt VISUDO @mansectsu@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -37,8 +39,8 @@ file in a safe fashion, analogous to
 .Nm
 locks the
 .Em sudoers
-file against multiple simultaneous edits, provides basic sanity checks,
-and checks for parse errors.
+file against multiple simultaneous edits, performs basic validity checks,
+and checks for syntax errors before installing the edited file.
 If the
 .Em sudoers
 file is currently being edited you will receive a message to try again later.
@@ -66,17 +68,16 @@ The
 .Ql Q
 option should be used with extreme caution because if
 .Nm
-believes there to be a parse error, so will
+believes there to be a syntax error, so will
 .Nm sudo
-and no one
-will be able to run
+and no one will be able to run
 .Nm sudo
 again until the error is fixed.
 If
 .Ql e
 is typed to edit the
 .Em sudoers
-file after a parse error has been detected, the cursor will be placed on
+file after a syntax error has been detected, the cursor will be placed on
 the line where the error occurred (if the editor supports this feature).
 .Pp
 There are two
@@ -98,15 +99,20 @@ or
 .Ev EDITOR
 environment variable if possible, or the first editor in the
 list that exists and is executable.
-Note that the
+Note that
+.Nm sudo
+does not preserve the
 .Ev SUDO_EDITOR ,
 .Ev VISUAL
-and
+or
 .Ev EDITOR
-environment variables are not preserved by default when the
+environment variables unless they are present in the
+.Em env_keep
+list or the
 .Em env_reset
+option is disabled in the
 .Em sudoers
-option is enabled.
+file.
 The default editor path is
 .Pa @editor@
 which can be set at compile time via the
@@ -121,10 +127,14 @@ will use the value of the
 or
 .Ev EDITOR
 environment variables before falling back on the default editor list.
-Note that this may create a security hole as it allows the user to
-run any arbitrary command as root without logging.
-A safer alternative is to place a colon-separated list of editors
-in the
+Note that
+.Nm visudo
+is typically run as root so this option may allow a user with
+.Nm visudo
+privileges to run arbitrary commands as root without logging.
+An alternative is to place a colon-separated list of
+.Dq safe
+editors int the
 .Em editor
 variable.
 .Nm
@@ -212,7 +222,7 @@ file.
 If an alias is referenced but not actually defined
 or if there is a cycle in an alias,
 .Nm
-will consider this a parse error.
+will consider this a syntax error.
 Note that it is not possible to differentiate between an
 alias and a host name or user name that consists solely of uppercase
 letters, digits, and the underscore
@@ -230,7 +240,7 @@ A
 .Em sudoers
 file may be specified instead of the default,
 .Pa @sysconfdir@/sudoers .
-The lock file used is the specified
+The temporary file used is the specified
 .Em sudoers
 file with
 .Dq \.tmp
@@ -285,12 +295,12 @@ file.
 The
 .Em sudoers_uid
 argument can be used to override the default owner of the sudoers file.
-It should be specified as a numeric user ID.
+It should be specified as a numeric user-ID.
 .It sudoers_gid=gid
 The
 .Em sudoers_gid
 argument can be used to override the default group of the sudoers file.
-It must be specified as a numeric group ID (not a group name).
+It must be specified as a numeric group-ID (not a group name).
 .It sudoers_mode=mode
 The
 .Em sudoers_mode
@@ -336,12 +346,12 @@ Sudo front end configuration
 .It Pa @sysconfdir@/sudoers
 List of who can run what
 .It Pa @sysconfdir@/sudoers.tmp
-Lock file for visudo
+Default temporary file used by visudo
 .El
 .Sh DIAGNOSTICS
 In addition to reporting
 .Em sudoers
-parse errors,
+syntax errors,
 .Nm
 may produce the following messages:
 .Bl -tag -width 4n
@@ -349,12 +359,12 @@ may produce the following messages:
 Someone else is currently editing the
 .Em sudoers
 file.
-.It Li @sysconfdir@/sudoers.tmp: Permission denied
+.It Li @sysconfdir@/sudoers: Permission denied
 You didn't run
 .Nm
 as root.
 .It Li you do not exist in the passwd database
-Your user ID does not appear in the system passwd database.
+Your user-ID does not appear in the system passwd database.
 .It Li Warning: {User,Runas,Host,Cmnd}_Alias referenced but not defined
 Either you are trying to use an undeclared {User,Runas,Host,Cmnd}_Alias
 or you have a user or host name listed that consists solely of

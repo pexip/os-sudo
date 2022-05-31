@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2008, 2010-2011, 2013
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -23,8 +25,6 @@
 #include <config.h>
 
 #ifndef HAVE_ISBLANK
-
-#include <sys/types.h>
 
 #include "sudo_compat.h"
 

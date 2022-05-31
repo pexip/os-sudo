@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2010-2012, 2014-2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,9 +23,7 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <sys/ioctl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>		/* for struct winsize on HP-UX */
@@ -37,7 +37,7 @@ static int
 get_ttysize_ioctl(int *rowp, int *colp)
 {
     struct winsize wsize;
-    debug_decl(get_ttysize_ioctl, SUDO_DEBUG_UTIL)
+    debug_decl(get_ttysize_ioctl, SUDO_DEBUG_UTIL);
 
     if (ioctl(STDERR_FILENO, TIOCGWINSZ, &wsize) == 0 &&
 	wsize.ws_row != 0 && wsize.ws_col  != 0) {
@@ -51,18 +51,18 @@ get_ttysize_ioctl(int *rowp, int *colp)
 void
 sudo_get_ttysize_v1(int *rowp, int *colp)
 {
-    debug_decl(sudo_get_ttysize, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_get_ttysize, SUDO_DEBUG_UTIL);
 
     if (get_ttysize_ioctl(rowp, colp) == -1) {
 	char *p;
 
 	/* Fall back on $LINES and $COLUMNS. */
 	if ((p = getenv("LINES")) == NULL ||
-	    (*rowp = strtonum(p, 1, INT_MAX, NULL)) <= 0) {
+	    (*rowp = sudo_strtonum(p, 1, INT_MAX, NULL)) <= 0) {
 	    *rowp = 24;
 	}
 	if ((p = getenv("COLUMNS")) == NULL ||
-	    (*colp = strtonum(p, 1, INT_MAX, NULL)) <= 0) {
+	    (*colp = sudo_strtonum(p, 1, INT_MAX, NULL)) <= 0) {
 	    *colp = 80;
 	}
     }

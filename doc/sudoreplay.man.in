@@ -1,6 +1,8 @@
 .\" Automatically generated from an mdoc input file.  Do not edit.
 .\"
-.\" Copyright (c) 2009-2018 Todd C. Miller <Todd.Miller@sudo.ws>
+.\" SPDX-License-Identifier: ISC
+.\"
+.\" Copyright (c) 2009-2020 Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
 .\" purpose with or without fee is hereby granted, provided that the above
@@ -14,7 +16,7 @@
 .\" ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\" OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.TH "SUDOREPLAY" "@mansectsu@" "October 6, 2018" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
+.TH "SUDOREPLAY" "@mansectsu@" "May 18, 2020" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
 .nh
 .if n .ad l
 .SH "NAME"
@@ -23,7 +25,7 @@
 .SH "SYNOPSIS"
 .HP 11n
 \fBsudoreplay\fR
-[\fB\-hnRS\fR]
+[\fB\-FhnRS\fR]
 [\fB\-d\fR\ \fIdir\fR]
 [\fB\-f\fR\ \fIfilter\fR]
 [\fB\-m\fR\ \fInum\fR]
@@ -49,11 +51,20 @@ The
 should either be a six character sequence of digits and
 upper case letters, e.g.,
 \fR0100A5\fR,
-or a pattern matching the
+a pattern matching the
 \fIiolog_file\fR
 option in the
 \fIsudoers\fR
-file.
+file, or a path name.
+Path names may be relative to the
+\fIiolog_dir\fR
+option in the
+\fIsudoers\fR
+file (unless overridden by the
+\fB\-d\fR
+option) or fully qualified, beginning with a
+\(oq/\(cq
+character.
 When a command is run via
 \fBsudo\fR
 with
@@ -127,6 +138,21 @@ argument is a comma-separated list, consisting of one or more of following:
 and
 \fIttyout\fR.
 .TP 12n
+\fB\-F\fR, \fB\--follow\fR
+Enable
+\(lqfollow mode\(rq.
+When replaying a session,
+\fBsudoreplay\fR
+will ignore end-of-file and keep replaying until the log is complete.
+This can be used to replay a session that is still in progress,
+similar to
+\(lqtail -f\(rq.
+An I/O log file is considered to be complete when the write bits
+have been cleared on the session's timing file.
+Note that versions of
+\fBsudo\fR
+prior to 1.9.1 do not clear the write bits upon completion.
+.TP 12n
 \fB\-h\fR, \fB\--help\fR
 Display a short help message to the standard output and exit.
 .TP 12n
@@ -171,6 +197,10 @@ Note that unless a
 was explicitly specified when
 \fBsudo\fR
 was run this field will be empty in the log.
+.TP 8n
+host \fIhostname\fR
+Evaluates to true if the command was run on the specified
+\fIhostname\fR.
 .TP 8n
 runas \fIrunas_user\fR
 Evaluates to true if the command was run as the specified
@@ -384,6 +414,9 @@ The default I/O log directory.
 .TP 26n
 \fI@iolog_dir@/00/00/01/log\fR
 Example session log info.
+.TP 26n
+\fI@iolog_dir@/00/00/01/log.json\fR
+Example session log info (JSON format).
 .TP 26n
 \fI@iolog_dir@/00/00/01/stdin\fR
 Example session standard input log.

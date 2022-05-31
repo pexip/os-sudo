@@ -3,8 +3,9 @@
 # Test LDIF invalid base64 attribute parsing
 #
 
-exec 2>&1
-./cvtsudoers -c "" -i ldif -b "ou=SUDOers,dc=sudo,dc=ws" -I 10 -O 10 <<EOF
+: ${CVTSUDOERS=cvtsudoers}
+
+$CVTSUDOERS -c "" -i ldif -b "ou=SUDOers,dc=sudo,dc=ws" -I 10 -O 10 <<EOF
 # defaults, SUDOers, sudo.ws
 dn:: Y249ZGVmYXVsdHMsb3U9U1VET2VycyxkYz1zdWRvLGRjPXdz 
 objectClass: top
@@ -39,3 +40,10 @@ sudoCommand: ALL
 sudoOption: !authenticate
 sudoOrder: 10
 EOF
+
+# cvtsudoers should exit with an error
+if [ $? -eq 0 ]; then
+    exit 1
+else
+    exit 0
+fi

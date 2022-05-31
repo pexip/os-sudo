@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2010, 2011, 2013-2018
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -22,15 +24,8 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <grp.h>
 #include <limits.h>
 #include <unistd.h>
@@ -144,6 +139,7 @@ sudo_getgrouplist2_v1(const char *name, GETGROUPS_T basegid,
 	/* Dynamically-sized group vector, count groups and alloc. */
 	grpsize = 1;	/* reserve one for basegid */
 	if (*grset != '\0') {
+	    grpsize++;	/* at least one supplementary group */
 	    for (cp = grset; *cp != '\0'; cp++) {
 		if (*cp == ',')
 		    grpsize++;
@@ -162,7 +158,7 @@ sudo_getgrouplist2_v1(const char *name, GETGROUPS_T basegid,
     groups[0] = basegid;
 
     for (cp = strtok_r(grset, ",", &last); cp != NULL; cp = strtok_r(NULL, ",", &last)) {
-	gid = sudo_strtoid(cp, NULL, NULL, &errstr);
+	gid = sudo_strtoid(cp, &errstr);
 	if (errstr == NULL && gid != basegid) {
 	    if (ngroups == grpsize)
 		goto done;
@@ -248,7 +244,7 @@ str2grp(const char *instr, int inlen, void *ent, char *buf, int buflen)
     if ((fieldsep = strchr(cp = fieldsep, ':')) == NULL)
 	return yp ? NSS_STR_PARSE_SUCCESS : NSS_STR_PARSE_PARSE;
     *fieldsep++ = '\0';
-    id = sudo_strtoid(cp, NULL, NULL, &errstr);
+    id = sudo_strtoid(cp, &errstr);
     if (errstr != NULL) {
 	/*
 	 * A range error is always a fatal error, but ignore garbage

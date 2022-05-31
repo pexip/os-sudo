@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2017 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -16,7 +18,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +30,7 @@
 #include "sudo_fatal.h"
 #include "check.h"
 
-__dso_public int main(int argc, char *argv[]);
+sudo_dso_public int main(int argc, char *argv[]);
 
 #ifdef __linux__
 static int
@@ -50,7 +51,7 @@ get_now(struct timespec *now)
 	    buf[strcspn(buf, "\n")] = '\0';
 
 	    /* Boot time is in seconds since the epoch. */
-	    seconds = strtonum(buf + 6, 0, TIME_T_MAX, &errstr);
+	    seconds = sudo_strtonum(buf + 6, 0, TIME_T_MAX, &errstr);
 	    if (errstr != NULL)
 		return -1;
 

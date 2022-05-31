@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,9 +23,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <stdio.h>
-
 #include "sudoers.h"
 
 /*
@@ -35,7 +34,7 @@ hexchar(const char *s)
 {
     unsigned char result[2];
     int i;
-    debug_decl(hexchar, SUDOERS_DEBUG_UTIL)
+    debug_decl(hexchar, SUDOERS_DEBUG_UTIL);
 
     for (i = 0; i < 2; i++) {
 	switch (s[i]) {

@@ -1,6 +1,8 @@
 .\" Automatically generated from an mdoc input file.  Do not edit.
 .\"
-.\" Copyright (c) 1994-1996, 1998-2005, 2007-2018
+.\" SPDX-License-Identifier: ISC
+.\"
+.\" Copyright (c) 1994-1996, 1998-2005, 2007-2020
 .\"	Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -23,7 +25,7 @@
 .nr BA @BAMAN@
 .nr LC @LCMAN@
 .nr PS @PSMAN@
-.TH "SUDO" "@mansectsu@" "November 25, 2018" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
+.TH "SUDO" "@mansectsu@" "September 1, 2020" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
 .nh
 .if n .ad l
 .SH "NAME"
@@ -39,7 +41,7 @@
 .HP 5n
 \fBsudo\fR
 \fB\-v\fR
-[\fB\-AknS\fR]
+[\fB\-ABknS\fR]
 .if \n(BA [\fB\-a\fR\ \fItype\fR]
 [\fB\-g\fR\ \fIgroup\fR]
 [\fB\-h\fR\ \fIhost\fR]
@@ -49,7 +51,7 @@
 .HP 5n
 \fBsudo\fR
 \fB\-l\fR
-[\fB\-AknS\fR]
+[\fB\-ABknS\fR]
 .if \n(BA [\fB\-a\fR\ \fItype\fR]
 [\fB\-g\fR\ \fIgroup\fR]
 [\fB\-h\fR\ \fIhost\fR]
@@ -60,13 +62,15 @@
 .br
 .HP 5n
 \fBsudo\fR
-[\fB\-AbEHnPS\fR]
+[\fB\-ABbEHnPS\fR]
 .if \n(BA [\fB\-a\fR\ \fItype\fR]
 [\fB\-C\fR\ \fInum\fR]
 .if \n(LC [\fB\-c\fR\ \fIclass\fR]
+[\fB\-D\fR\ \fIdirectory\fR]
 [\fB\-g\fR\ \fIgroup\fR]
 [\fB\-h\fR\ \fIhost\fR]
 [\fB\-p\fR\ \fIprompt\fR]
+[\fB\-R\fR\ \fIdirectory\fR]
 .if \n(SL [\fB\-r\fR\ \fIrole\fR]
 .if \n(SL [\fB\-t\fR\ \fItype\fR]
 [\fB\-T\fR\ \fItimeout\fR]
@@ -77,13 +81,17 @@
 .br
 .HP 9n
 \fBsudoedit\fR
-[\fB\-AknS\fR]
+[\fB\-ABknS\fR]
 .if \n(BA [\fB\-a\fR\ \fItype\fR]
 [\fB\-C\fR\ \fInum\fR]
 .if \n(LC [\fB\-c\fR\ \fIclass\fR]
+[\fB\-D\fR\ \fIdirectory\fR]
 [\fB\-g\fR\ \fIgroup\fR]
 [\fB\-h\fR\ \fIhost\fR]
 [\fB\-p\fR\ \fIprompt\fR]
+[\fB\-R\fR\ \fIdirectory\fR]
+.if \n(SL [\fB\-r\fR\ \fIrole\fR]
+.if \n(SL [\fB\-t\fR\ \fItype\fR]
 [\fB\-T\fR\ \fItimeout\fR]
 [\fB\-u\fR\ \fIuser\fR]
 \fIfile\ ...\fR
@@ -96,7 +104,7 @@ as the superuser or another user, as specified by the security
 policy.
 The invoking user's real
 (\fInot\fR effective)
-user ID is used to determine the user name with which
+user-ID is used to determine the user name with which
 to query the security policy.
 .PP
 \fBsudo\fR
@@ -135,18 +143,34 @@ Security policies may support credential caching to allow the user
 to run
 \fBsudo\fR
 again for a period of time without requiring authentication.
-The
+By default, the
 \fIsudoers\fR
-policy caches credentials for
+policy caches credentials on a per-terminal basis for
 \fR@timeout@\fR
-minutes, unless overridden in
-sudoers(@mansectform@).
+minutes.
+See the
+\fItimestamp_type\fR
+and
+\fItimestamp_timeout\fR
+options in
+sudoers(@mansectform@)
+for more information.
 By running
 \fBsudo\fR
 with the
 \fB\-v\fR
 option, a user can update the cached credentials without running a
 \fIcommand\fR.
+.PP
+On systems where
+\fBsudo\fR
+is the primary method of gaining superuser privileges, it is imperative
+to avoid syntax errors in the security policy configuration files.
+For the default security policy,
+sudoers(@mansectform@),
+changes to the configuration files should be made using the
+visudo(@mansectsu@)
+utility which will ensure that no syntax errors are introduced.
 .PP
 When invoked as
 \fBsudoedit\fR,
@@ -211,6 +235,10 @@ BSD
 authentication.
 .\}
 .TP 12n
+\fB\-B\fR, \fB\--bell\fR
+Ring the bell as part of the password promp when a terminal is present.
+This option has no effect if an askpass program is used.
+.TP 12n
 \fB\-b\fR, \fB\--background\fR
 Run the given command in the background.
 Note that it is not possible to use shell job control to manipulate
@@ -254,7 +282,7 @@ If
 is
 \fB-\fR,
 the default login class of the target user will be used.
-Otherwise, the command must be run as the superuser (user ID 0), or
+Otherwise, the command must be run as the superuser (user-ID 0), or
 \fBsudo\fR
 must be run from a shell that is already running as the superuser.
 If the command is being run as a login shell, additional
@@ -265,6 +293,13 @@ This option is only available on systems with
 BSD
 login classes.
 .\}
+.TP 12n
+\fB\-D\fR \fIdirectory\fR, \fB\--chdir\fR=\fIdirectory\fR
+Run the command in the specified
+\fIdirectory\fR
+instead of the current working directory.
+The security policy may return an error if the user does not have
+permission to specify the working directory.
 .TP 12n
 \fB\-E\fR, \fB\--preserve-env\fR
 Indicates to the security policy that the user wishes to
@@ -278,6 +313,7 @@ comma-separated list of environment variables to those preserved
 from the user's environment.
 The security policy may return an error if the user does not have
 permission to preserve the environment.
+This option may be specified multiple times.
 .TP 12n
 \fB\-e\fR, \fB\--edit\fR
 Edit one or more files instead of running a command.
@@ -341,6 +377,8 @@ If the specified file does not exist, it will be created.
 Note that unlike most commands run by
 \fIsudo\fR,
 the editor is run with the invoking user's environment unmodified.
+If the temporary file becomes empty after editing, the user will
+be prompted before it is installed.
 If, for some reason,
 \fBsudo\fR
 is unable to update a file with its edited version, the user will
@@ -355,7 +393,7 @@ instead of the primary group specified by the target
 user's password database entry.
 The
 \fIgroup\fR
-may be either a group name or a numeric group ID
+may be either a group name or a numeric group-ID
 (GID)
 prefixed with the
 \(oq#\(cq
@@ -498,7 +536,7 @@ By default, the
 \fIsudoers\fR
 policy will initialize the group vector to the list of groups the
 target user is a member of.
-The real and effective group IDs, however, are still set to match
+The real and effective group-IDs, however, are still set to match
 the target user.
 .TP 12n
 \fB\-p\fR \fIprompt\fR, \fB\--prompt\fR=\fIprompt\fR
@@ -559,6 +597,15 @@ specified by a PAM module unless the
 flag is disabled in
 \fIsudoers\fR.
 .RE
+.TP 12n
+\fB\-R\fR \fIdirectory\fR, \fB\--chroot\fR=\fIdirectory\fR
+Change to the specified root
+\fIdirectory\fR
+(see
+chroot(@mansectsu@))
+before running the command.
+The security policy may return an error if the user does not have
+permission to specify the root directory.
 .if \n(SL \{\
 .TP 12n
 \fB\-r\fR \fIrole\fR, \fB\--role\fR=\fIrole\fR
@@ -623,7 +670,7 @@ Run the command as a user other than the default target user
 \fIroot\fR).
 The
 \fIuser\fR
-may be either a user name or a numeric user ID
+may be either a user name or a numeric user-ID
 (UID)
 prefixed with the
 \(oq#\(cq
@@ -674,6 +721,13 @@ option indicates that
 \fBsudo\fR
 should stop processing command line arguments.
 .PP
+Options that take a value may only be specified once unless
+otherwise indicated in the description.
+This is to help guard against problems caused by poorly written
+scripts that invoke
+\fBsudo\fR
+with user-controlled input.
+.PP
 Environment variables to be set for the command may also be passed
 on the command line in the form of
 \fIVAR\fR=\fIvalue\fR,
@@ -713,13 +767,13 @@ option was specified).
 The following parameters may be specified by security policy:
 .TP 3n
 \fB\(bu\fR
-real and effective user ID
+real and effective user-ID
 .TP 3n
 \fB\(bu\fR
-real and effective group ID
+real and effective group-ID
 .TP 3n
 \fB\(bu\fR
-supplementary group IDs
+supplementary group-IDs
 .TP 3n
 \fB\(bu\fR
 the environment list
@@ -823,6 +877,10 @@ Note that
 and
 \fIpam_setcred\fR
 are enabled by default on systems using PAM.
+.PP
+On systems that use PAM, the security policy's close function
+is responsible for closing the PAM session.
+It may also log the command's exit status.
 .SS "Signal handling"
 When the command is run as a child of the
 \fBsudo\fR
@@ -906,13 +964,13 @@ or compiled directly into the
 binary.
 If no
 sudo.conf(@mansectform@)
-file is present, or it contains no
+file is present, or if it doesn't contain any
 \fRPlugin\fR
 lines,
 \fBsudo\fR
-will use the traditional
-\fIsudoers\fR
-security policy and I/O logging.
+will use
+sudoers(@mansectform@)
+for the policy, auditing and I/O logging plugins.
 See the
 sudo.conf(@mansectform@)
 manual for details of the
@@ -1021,7 +1079,7 @@ To prevent the disclosure of potentially sensitive information,
 disables core dumps by default while it is executing (they are
 re-enabled for the command that is run).
 This historical practice dates from a time when most operating
-systems allowed setuid processes to dump core by default.
+systems allowed set-user-ID processes to dump core by default.
 To aid in debugging
 \fBsudo\fR
 crashes, you may wish to re-enable core dumps by setting
@@ -1124,7 +1182,9 @@ if no terminal is available or if the
 option is specified.
 .TP 17n
 \fRSUDO_COMMAND\fR
-Set to the command run by sudo.
+Set to the command run by sudo, including command line arguments.
+The command line arguments are truncated at 4096 characters to
+prevent a potential execution error.
 .TP 17n
 \fRSUDO_EDITOR\fR
 Default editor to use in
@@ -1132,7 +1192,7 @@ Default editor to use in
 (sudoedit) mode.
 .TP 17n
 \fRSUDO_GID\fR
-Set to the group ID of the user who invoked sudo.
+Set to the group-ID of the user who invoked sudo.
 .TP 17n
 \fRSUDO_PROMPT\fR
 Used as the default password prompt unless
@@ -1146,7 +1206,7 @@ If set,
 will be set to its value for the program being run.
 .TP 17n
 \fRSUDO_UID\fR
-Set to the user ID of the user who invoked sudo.
+Set to the user-ID of the user who invoked sudo.
 .TP 17n
 \fRSUDO_USER\fR
 Set to the login name of the user who invoked sudo.
@@ -1266,7 +1326,7 @@ for more information.
 was not run with root privileges.
 The
 \fBsudo\fR
-binary must be owned by the root user and have the Set-user-ID bit set.
+binary must be owned by the root user and have the set-user-ID bit set.
 Also, it must not be located on a file system mounted with the
 \(oqnosuid\(cq
 option or on an NFS file system that maps uid 0 to an unprivileged uid.
@@ -1306,15 +1366,18 @@ This may happen if no terminal is available (or the
 option is specified) and the standard input has been redirected from
 \fI/dev/null\fR.
 .TP 6n
-\fRno tty present and no askpass program specified\fR
+\fRa terminal is required to read the password\fR
 \fBsudo\fR
-needs to read the password but there is no mechanism available to do so.
+needs to read the password but there is no mechanism available for it
+to do so.
 A terminal is not present to read the password from,
 \fBsudo\fR
 has not been configured to read from the standard input,
-and no askpass program has been specified either via the
-\fB\-A\fR
-option or the
+the
+\fB\-S\fR
+option was not used, and no askpass helper has been specified either via the
+sudo.conf(@mansectform@)
+file or the
 \fRSUDO_ASKPASS\fR
 environment variable.
 .TP 6n
@@ -1329,7 +1392,7 @@ was not run with root privileges.
 The
 \fBsudo\fR
 binary does not have the correct owner or permissions.
-It must be owned by the root user and have the Set-user-ID bit set.
+It must be owned by the root user and have the set-user-ID bit set.
 .TP 6n
 \fRsudoedit is not supported on this platform\fR
 It is only possible to run
@@ -1341,7 +1404,7 @@ The user did not enter a password before the password timeout
 (5 minutes by default) expired.
 .TP 6n
 \fRyou do not exist in the passwd database\fR
-Your user ID does not appear in the system passwd database.
+Your user-ID does not appear in the system passwd database.
 .TP 6n
 \fRyou may not specify environment variables in edit mode\fR
 It is only possible to specify environment variables when running
@@ -1355,6 +1418,7 @@ passwd(@mansectform@),
 sudo.conf(@mansectform@),
 sudo_plugin(@mansectform@),
 sudoers(@mansectform@),
+sudoers_timestamp(@mansectform@),
 sudoreplay(@mansectsu@),
 visudo(@mansectsu@)
 .SH "HISTORY"
@@ -1408,9 +1472,9 @@ section for more information.
 .PP
 Running shell scripts via
 \fBsudo\fR
-can expose the same kernel bugs that make setuid shell scripts
+can expose the same kernel bugs that make set-user-ID shell scripts
 unsafe on some operating systems (if your OS has a /dev/fd/ directory,
-setuid shell scripts are generally safe).
+set-user-ID shell scripts are generally safe).
 .SH "BUGS"
 If you feel you have found a bug in
 \fBsudo\fR,

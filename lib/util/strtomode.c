@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2013-2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,18 +23,14 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <sys/stat.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 
-#define DEFAULT_TEXT_DOMAIN	"sudo"
-#include "sudo_gettext.h"	/* must be included before sudo_compat.h */
-
 #include "sudo_compat.h"
 #include "sudo_debug.h"
+#include "sudo_gettext.h"
 #include "sudo_util.h"
 
 /*
@@ -45,7 +43,7 @@ sudo_strtomode_v1(const char *cp, const char **errstr)
 {
     char *ep;
     long lval;
-    debug_decl(sudo_strtomode, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_strtomode, SUDO_DEBUG_UTIL);
 
     errno = 0;
     lval = strtol(cp, &ep, 8);

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -16,26 +18,15 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
-#ifdef HAVE_STDBOOL_H
-# include <stdbool.h>
-#else
-# include "compat/stdbool.h"
-#endif
+#include <string.h>
 
 #include "sudo_compat.h"
 #include "sudo_fatal.h"
 #include "sudo_util.h"
 
-__dso_public int main(int argc, char *argv[]);
+sudo_dso_public int main(int argc, char *argv[]);
 
 /*
  * Test that sudo_parse_gids() works as expected.
@@ -85,7 +76,7 @@ main(int argc, char *argv[])
 	free(gidlist);
 	ngids = sudo_parse_gids(test_data[i].gids, test_data[i].baseptr, &gidlist);
 	if (ngids == -1)
-	    exit(1);	/* out of memory? */
+	    exit(EXIT_FAILURE);	/* out of memory? */
 	ntests++;
 	if (ngids != test_data[i].ngids) {
 	    sudo_warnx_nodebug("test #%d: expected %d gids, got %d",

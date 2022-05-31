@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,9 +23,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "sudoers.h"
@@ -47,7 +46,7 @@ sudoers_gc_add(enum sudoers_gc_types type, void *v)
 {
 #ifdef NO_LEAKS
     struct sudoers_gc_entry *gc;
-    debug_decl(sudoers_gc_add, SUDOERS_DEBUG_UTIL)
+    debug_decl(sudoers_gc_add, SUDOERS_DEBUG_UTIL);
 
     if (v == NULL)
 	debug_return_bool(false);
@@ -82,7 +81,7 @@ sudoers_gc_remove(enum sudoers_gc_types type, void *v)
 {
 #ifdef NO_LEAKS
     struct sudoers_gc_entry *gc, *prev = NULL;
-    debug_decl(sudoers_gc_remove, SUDOERS_DEBUG_UTIL)
+    debug_decl(sudoers_gc_remove, SUDOERS_DEBUG_UTIL);
 
     SLIST_FOREACH(gc, &sudoers_gc_list, entries) {
 	switch (gc->type) {
@@ -117,7 +116,7 @@ sudoers_gc_run(void)
 {
     struct sudoers_gc_entry *gc;
     char **cur;
-    debug_decl(sudoers_gc_run, SUDOERS_DEBUG_UTIL)
+    debug_decl(sudoers_gc_run, SUDOERS_DEBUG_UTIL);
 
     /* Collect garbage. */
     while ((gc = SLIST_FIRST(&sudoers_gc_list))) {

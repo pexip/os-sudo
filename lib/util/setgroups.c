@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2011-2012, 2014-2016 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -22,8 +24,6 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
 #include <grp.h>
@@ -37,7 +37,7 @@ int
 sudo_setgroups_v1(int ngids, const GETGROUPS_T *gids)
 {
     int maxgids, ret;
-    debug_decl(sudo_setgroups, SUDO_DEBUG_UTIL)
+    debug_decl(sudo_setgroups, SUDO_DEBUG_UTIL);
 
     ret = setgroups(ngids, (GETGROUPS_T *)gids);
     if (ret == -1 && errno == EINVAL) {

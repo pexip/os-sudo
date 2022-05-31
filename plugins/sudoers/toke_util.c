@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 1996, 1998-2005, 2007-2016
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -26,17 +28,9 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
-#include <unistd.h>
-#include <errno.h>
+#include <string.h>
 
 #include "sudoers.h"
 #include "toke.h"
@@ -50,7 +44,7 @@ fill_txt(const char *src, size_t len, size_t olen)
 {
     char *dst;
     int h;
-    debug_decl(fill_txt, SUDOERS_DEBUG_PARSER)
+    debug_decl(fill_txt, SUDOERS_DEBUG_PARSER);
 
     dst = olen ? realloc(sudoerslval.string, olen + len + 1) : malloc(len + 1);
     if (dst == NULL) {
@@ -85,7 +79,7 @@ bool
 append(const char *src, size_t len)
 {
     int olen = 0;
-    debug_decl(append, SUDOERS_DEBUG_PARSER)
+    debug_decl(append, SUDOERS_DEBUG_PARSER);
 
     if (sudoerslval.string != NULL)
 	olen = strlen(sudoerslval.string);
@@ -101,7 +95,7 @@ fill_cmnd(const char *src, size_t len)
 {
     char *dst;
     size_t i;
-    debug_decl(fill_cmnd, SUDOERS_DEBUG_PARSER)
+    debug_decl(fill_cmnd, SUDOERS_DEBUG_PARSER);
 
     arg_len = arg_size = 0;
 
@@ -122,6 +116,22 @@ fill_cmnd(const char *src, size_t len)
     }
     *dst = '\0';
 
+    /* Check for sudoedit specified as a fully-qualified path. */
+    if ((dst = strrchr(sudoerslval.command.cmnd, '/')) != NULL) { // -V575
+	if (strcmp(dst, "/sudoedit") == 0) {
+	    if (sudoers_strict) {
+		sudoerserror(
+		    N_("sudoedit should not be specified with a path"));
+	    }
+	    free(sudoerslval.command.cmnd);
+	    if ((sudoerslval.command.cmnd = strdup("sudoedit")) == NULL) {
+		sudo_warnx(U_("%s: %s"), __func__,
+		    U_("unable to allocate memory"));
+		debug_return_bool(false);
+	    }
+	}
+    }
+
     debug_return_bool(true);
 }
 
@@ -130,7 +140,7 @@ fill_args(const char *s, size_t len, int addspace)
 {
     unsigned int new_len;
     char *p;
-    debug_decl(fill_args, SUDOERS_DEBUG_PARSER)
+    debug_decl(fill_args, SUDOERS_DEBUG_PARSER);
 
     if (arg_size == 0) {
 	addspace = 0;
@@ -178,7 +188,7 @@ bool
 ipv6_valid(const char *s)
 {
     int nmatch = 0;
-    debug_decl(ipv6_valid, SUDOERS_DEBUG_PARSER)
+    debug_decl(ipv6_valid, SUDOERS_DEBUG_PARSER);
 
     for (; *s != '\0'; s++) {
 	if (s[0] == ':' && s[1] == ':') {
