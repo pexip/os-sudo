@@ -1,5 +1,7 @@
 /*	$OpenBSD: reallocarray.c,v 1.2 2014/12/08 03:45:00 bcook Exp $	*/
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2008 Otto Moerbeek <otto@drijf.net>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -24,7 +26,6 @@
 
 #ifndef HAVE_REALLOCARRAY
 
-#include <sys/types.h>
 #include <stdlib.h>
 #if defined(HAVE_STDINT_H)
 # include <stdint.h>

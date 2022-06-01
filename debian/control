@@ -2,12 +2,16 @@ Source: sudo
 Section: admin
 Priority: optional
 Maintainer: Pexip AS <packaging@pexip.com>
-XSBC-Pexip-Original-Maintainer: Bdale Garbee <bdale@gag.com>
-Build-Depends: debhelper (>= 10), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], mandoc
+XSBC-Pexip-Original-Maintainer: Sudo Maintainers <sudo@packages.debian.org>
+XSBC-Pexip-Original-Uploaders: Marc Haber <mh+debian-packages@zugschlus.de>,
+  Hanno Wagner <wagner@debian.org>,
+  Hilko Bengen <bengen@debian.org>,
+  Bastian Blank <waldi@debian.org>
+Build-Depends: debhelper (>= 10), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], mandoc, zlib1g-dev
 Standards-Version: 4.1.1
-Vcs-Git: https://salsa.debian.org/debian/sudo.git
-Vcs-Browser: https://salsa.debian.org/debian/sudo
-Homepage: http://www.sudo.ws/
+Vcs-Git: https://salsa.debian.org/sudo-team/sudo.git
+Vcs-Browser: https://salsa.debian.org/sudo-team/sudo
+Homepage: https://www.sudo.ws/
 XS-Pexip-Upstream: http://deb.debian.org/debian/ bullseye
 
 Package: sudo

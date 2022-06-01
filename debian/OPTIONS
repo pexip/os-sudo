@@ -49,7 +49,7 @@ The following options were used to configure sudo for Debian GNU/Linux.
 
   --with-timedir=/var/lib/sudo
   --mandir=/usr/share/man
-  --libexecdir=/usr/lib/sudo
+  --libexecdir=/usr/lib
 
 	Comply with Debian policy on suitable paths.
 

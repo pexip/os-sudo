@@ -1,6 +1,8 @@
 /*	$OpenBSD: arc4random_uniform.c,v 1.2 2015/09/13 08:31:47 guenther Exp $	*/
 
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2008, Damien Miller <djm@openbsd.org>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -25,7 +27,6 @@
 
 #ifndef HAVE_ARC4RANDOM_UNIFORM
 
-#include <sys/types.h>
 #include <stdlib.h>
 #if defined(HAVE_STDINT_H)
 # include <stdint.h>

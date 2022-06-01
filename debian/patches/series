@@ -1,12 +1,5 @@
 typo-in-classic-insults.diff
 paths-in-samples.diff
 Whitelist-DPKG_COLORS-environment-variable.diff
-sudo_minus_1_uid.diff
-strtoid_minus_1_test_fix.diff
-Fix-a-buffer-overflow-when-pwfeedback-is-enabled-and.patch
-Sanity-check-size-when-converting-the-first-record-t.patch
-Reset-valid_flags-to-MODE_NONINTERACTIVE-for-sudoedi.patch
-Add-sudoedit-flag-checks-in-plugin-that-are-consiste.patch
-Fix-potential-buffer-overflow-when-unescaping-backsl.patch
-Fix-the-memset-offset-when-converting-a-v1-timestamp.patch
-Don-t-assume-that-argv-is-allocated-as-a-single-flat.patch
+fix-no-root-mailer.diff
+sudo-ldap-docs

@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 1996, 1998-2005, 2010-2012, 2014-2015
  *	Todd C. Miller <Todd.Miller@sudo.ws>
  *
@@ -26,19 +28,11 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <unistd.h>
 #include <pwd.h>
-#include <grp.h>
 #ifdef HAVE_GETSPNAM
 # include <shadow.h>
 #endif /* HAVE_GETSPNAM */
@@ -69,7 +63,7 @@ char *
 sudo_getepw(const struct passwd *pw)
 {
     char *epw = NULL;
-    debug_decl(sudo_getepw, SUDOERS_DEBUG_AUTH)
+    debug_decl(sudo_getepw, SUDOERS_DEBUG_AUTH);
 
     /* If there is a function to check for shadow enabled, use it... */
 #ifdef HAVE_ISCOMSEC
@@ -81,8 +75,11 @@ sudo_getepw(const struct passwd *pw)
     {
 	struct passwd *spw;
 
+	/* On OpenBSD we need to closed the non-shadow passwd db first. */
+	endpwent();
 	if ((spw = getpwnam_shadow(pw->pw_name)) != NULL)
 	    epw = spw->pw_passwd;
+	setpassent(1);
     }
 #endif /* HAVE_GETPWNAM_SHADOW */
 #ifdef HAVE_GETPRPWNAM
@@ -116,7 +113,7 @@ done:
 void
 sudo_setspent(void)
 {
-    debug_decl(sudo_setspent, SUDOERS_DEBUG_AUTH)
+    debug_decl(sudo_setspent, SUDOERS_DEBUG_AUTH);
 
 #ifdef HAVE_GETPRPWNAM
     setprpwent();
@@ -130,7 +127,7 @@ sudo_setspent(void)
 void
 sudo_endspent(void)
 {
-    debug_decl(sudo_endspent, SUDOERS_DEBUG_AUTH)
+    debug_decl(sudo_endspent, SUDOERS_DEBUG_AUTH);
 
 #ifdef HAVE_GETPRPWNAM
     endprpwent();

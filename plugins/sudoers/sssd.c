@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2003-2018 Todd C. Miller <Todd.Miller@sudo.ws>
+ * SPDX-License-Identifier: ISC
+ *
+ * Copyright (c) 2003-2020 Todd C. Miller <Todd.Miller@sudo.ws>
  * Copyright (c) 2011 Daniel Kopecek <dkopecek@redhat.com>
  *
  * This code is derived from software contributed by Aaron Spangler.
@@ -26,27 +28,18 @@
 
 #ifdef HAVE_SSSD
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
+#include <stdint.h>
+#include <string.h>
 #ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif /* HAVE_STRINGS_H */
-#include <unistd.h>
-#include <time.h>
 #include <ctype.h>
-#include <pwd.h>
-#include <grp.h>
-
 #include <errno.h>
-#include <stdint.h>
+#include <pwd.h>
 
 #include "sudoers.h"
-#include "gram.h"
 #include "sudo_lbuf.h"
 #include "sudo_ldap.h"
 #include "sudo_dso.h"
@@ -106,11 +99,11 @@ get_ipa_hostname(char **shostp, char **lhostp)
     int ret = false;
     ssize_t len;
     FILE *fp;
-    debug_decl(get_ipa_hostname, SUDOERS_DEBUG_SSSD)
+    debug_decl(get_ipa_hostname, SUDOERS_DEBUG_SSSD);
 
     fp = fopen(_PATH_SSSD_CONF, "r");
     if (fp != NULL) {
-	while ((len = getline(&line, &linesize, fp)) != -1) {
+	while ((len = getdelim(&line, &linesize, '\n', fp)) != -1) {
 	    char *cp = line;
 
 	    /* Trim trailing and leading spaces. */
@@ -238,6 +231,126 @@ val_array_iter(void **vp)
     return *val_array;
 }
 
+/*
+ * Wrapper for sudo_ldap_role_to_priv() that takes an sss rule..
+ * Returns a struct privilege on success or NULL on failure.
+ */
+static struct privilege *
+sss_rule_to_priv(struct sudo_sss_handle *handle, struct sss_sudo_rule *rule,
+    int *rc_out)
+{
+    char **cmnds = NULL, **runasusers = NULL, **runasgroups = NULL;
+    char **opts = NULL, **notbefore = NULL, **notafter = NULL;
+    char **hosts = NULL, **cn_array = NULL, *cn = NULL;
+    struct privilege *priv = NULL;
+    int rc;
+    debug_decl(sss_rule_to_priv, SUDOERS_DEBUG_SSSD);
+
+    /* Ignore sudoRole without sudoCommand or sudoHost. */
+    rc = handle->fn_get_values(rule, "sudoCommand", &cmnds);
+    if (rc != 0)
+	goto cleanup;
+    rc = handle->fn_get_values(rule, "sudoHost", &hosts);
+    if (rc != 0)
+	goto cleanup;
+
+    /* Get the entry's dn for long format printing. */
+    rc = handle->fn_get_values(rule, "cn", &cn_array);
+    if (rc != 0)
+	goto cleanup;
+    cn = cn_array[0];
+
+    /* Get sudoRunAsUser / sudoRunAs */
+    rc = handle->fn_get_values(rule, "sudoRunAsUser", &runasusers);
+    switch (rc) {
+    case 0:
+	break;
+    case ENOENT:
+	rc = handle->fn_get_values(rule, "sudoRunAs", &runasusers);
+	switch (rc) {
+	    case 0:
+	    case ENOENT:
+		break;
+	    default:
+		goto cleanup;
+	}
+	break;
+    default:
+	goto cleanup;
+    }
+
+    /* Get sudoRunAsGroup */
+    rc = handle->fn_get_values(rule, "sudoRunAsGroup", &runasgroups);
+    switch (rc) {
+    case 0:
+    case ENOENT:
+	break;
+    default:
+	goto cleanup;
+    }
+
+    /* Get sudoNotBefore */
+    rc = handle->fn_get_values(rule, "sudoNotBefore", &notbefore);
+    switch (rc) {
+    case 0:
+    case ENOENT:
+	break;
+    default:
+	goto cleanup;
+    }
+
+    /* Get sudoNotAfter */
+    rc = handle->fn_get_values(rule, "sudoNotAfter", &notafter);
+    switch (rc) {
+    case 0:
+    case ENOENT:
+	break;
+    default:
+	goto cleanup;
+    }
+
+    /* Parse sudoOptions. */
+    rc = handle->fn_get_values(rule, "sudoOption", &opts);
+    switch (rc) {
+    case 0:
+    case ENOENT:
+	break;
+    default:
+	goto cleanup;
+    }
+
+    priv = sudo_ldap_role_to_priv(cn, hosts, runasusers, runasgroups,
+	cmnds, opts, notbefore ? notbefore[0] : NULL,
+	notafter ? notafter[0] : NULL, false, true, val_array_iter);
+    if (priv == NULL) {
+	rc = ENOMEM;
+	goto cleanup;
+    }
+    rc = 0;
+
+cleanup:
+    if (cn_array != NULL)
+	handle->fn_free_values(cn_array);
+    if (cmnds != NULL)
+	handle->fn_free_values(cmnds);
+    if (hosts != NULL)
+	handle->fn_free_values(hosts);
+    if (runasusers != NULL)
+	handle->fn_free_values(runasusers);
+    if (runasgroups != NULL)
+	handle->fn_free_values(runasgroups);
+    if (opts != NULL)
+	handle->fn_free_values(opts);
+    if (notbefore != NULL)
+	handle->fn_free_values(notbefore);
+    if (notafter != NULL)
+	handle->fn_free_values(notafter);
+
+    *rc_out = rc;
+
+    debug_return_ptr(priv);
+}
+
 static bool
 sss_to_sudoers(struct sudo_sss_handle *handle,
     struct sss_sudo_result *sss_result)
@@ -245,24 +358,24 @@ sss_to_sudoers(struct sudo_sss_handle *handle,
     struct userspec *us;
     struct member *m;
     unsigned int i;
-    debug_decl(sss_to_sudoers, SUDOERS_DEBUG_SSSD)
+    debug_decl(sss_to_sudoers, SUDOERS_DEBUG_SSSD);
 
     /* We only have a single userspec */
     if ((us = calloc(1, sizeof(*us))) == NULL)
 	goto oom;
+    us->file = rcstr_dup("SSSD");
     TAILQ_INIT(&us->users);
     TAILQ_INIT(&us->privileges);
     STAILQ_INIT(&us->comments);
     TAILQ_INSERT_TAIL(&handle->parse_tree.userspecs, us, entries);
 
     /* We only include rules where the user matches. */
-    if ((m = calloc(1, sizeof(*m))) == NULL)
+    if ((m = new_member_all(NULL)) == NULL)
 	goto oom;
-    m->type = ALL;
     TAILQ_INSERT_TAIL(&us->users, m, entries);
 
     /*
-     * Treat each sudoRole as a separate privilege.
+     * Treat each rule as a separate privilege.
      *
      * Sssd has already sorted the rules in descending order.
      * The conversion to a sudoers parse tree requires that entries be
@@ -270,10 +383,8 @@ sss_to_sudoers(struct sudo_sss_handle *handle,
      */
     for (i = sss_result->num_rules; i-- > 0; ) {
 	struct sss_sudo_rule *rule = sss_result->rules + i;
-	char **cmnds, **runasusers = NULL, **runasgroups = NULL;
-	char **opts = NULL, **notbefore = NULL, **notafter = NULL;
-	char **hosts = NULL, **cn_array = NULL, *cn = NULL;
-	struct privilege *priv = NULL;
+	struct privilege *priv;
+	int rc;
 
 	/*
 	 * We don't know whether a rule was included due to a user/group
@@ -282,113 +393,11 @@ sss_to_sudoers(struct sudo_sss_handle *handle,
 	if (!sudo_sss_check_user(handle, rule))
 	    continue;
 
-	switch (handle->fn_get_values(rule, "sudoCommand", &cmnds)) {
-	case 0:
-	    break;
-	case ENOENT:
-	    /* Ignore sudoRole without sudoCommand. */
+	if ((priv = sss_rule_to_priv(handle, rule, &rc)) == NULL) {
+	    if (rc == ENOMEM)
+		goto oom;
 	    continue;
-	default:
-	    goto cleanup;
 	}
-
-	/* Get the entry's dn for long format printing. */
-	switch (handle->fn_get_values(rule, "cn", &cn_array)) {
-	case 0:
-	    cn = cn_array[0];
-	    break;
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Get sudoHost */
-	switch (handle->fn_get_values(rule, "sudoHost", &hosts)) {
-	case 0:
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Get sudoRunAsUser / sudoRunAs */
-	switch (handle->fn_get_values(rule, "sudoRunAsUser", &runasusers)) {
-	case 0:
-	    break;
-	case ENOENT:
-	    switch (handle->fn_get_values(rule, "sudoRunAs", &runasusers)) {
-		case 0:
-		case ENOENT:
-		    break;
-		default:
-		    goto cleanup;
-	    }
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Get sudoRunAsGroup */
-	switch (handle->fn_get_values(rule, "sudoRunAsGroup", &runasgroups)) {
-	case 0:
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Get sudoNotBefore */
-	switch (handle->fn_get_values(rule, "sudoNotBefore", &notbefore)) {
-	case 0:
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Get sudoNotAfter */
-	switch (handle->fn_get_values(rule, "sudoNotAfter", &notafter)) {
-	case 0:
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	/* Parse sudoOptions. */
-	switch (handle->fn_get_values(rule, "sudoOption", &opts)) {
-	case 0:
-	case ENOENT:
-	    break;
-	default:
-	    goto cleanup;
-	}
-
-	priv = sudo_ldap_role_to_priv(cn, hosts, runasusers, runasgroups,
-	    cmnds, opts, notbefore ? notbefore[0] : NULL,
-	    notafter ? notafter[0] : NULL, false, true, val_array_iter);
-
-    cleanup:
-	if (cn_array != NULL)
-	    handle->fn_free_values(cn_array);
-	if (cmnds != NULL)
-	    handle->fn_free_values(cmnds);
-	if (hosts != NULL)
-	    handle->fn_free_values(hosts);
-	if (runasusers != NULL)
-	    handle->fn_free_values(runasusers);
-	if (runasgroups != NULL)
-	    handle->fn_free_values(runasgroups);
-	if (opts != NULL)
-	    handle->fn_free_values(opts);
-	if (notbefore != NULL)
-	    handle->fn_free_values(notbefore);
-	if (notafter != NULL)
-	    handle->fn_free_values(notafter);
-
-	if (priv == NULL)
-	    goto oom;
 	TAILQ_INSERT_TAIL(&us->privileges, priv, entries);
     }
 
@@ -503,7 +512,7 @@ sudo_sss_result_get(struct sudo_nss *nss, struct passwd *pw)
 	break;
     case ENOMEM:
 	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
-	/* FALLTHROUGH */
+	FALLTHROUGH;
     default:
 	sudo_debug_printf(SUDO_DEBUG_ERROR, "handle->fn_send_recv: rc=%d", rc);
 	debug_return_ptr(NULL);
@@ -552,7 +561,6 @@ sudo_sss_open(struct sudo_nss *nss)
 	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
 	debug_return_int(ENOMEM);
     }
-    init_parse_tree(&handle->parse_tree);
 
     /* Load symbols */
     handle->ssslib = sudo_dso_load(path, SUDO_DSO_LAZY);
@@ -560,7 +568,8 @@ sudo_sss_open(struct sudo_nss *nss)
 	const char *errstr = sudo_dso_strerror();
 	sudo_warnx(U_("unable to load %s: %s"), path,
 	    errstr ? errstr : "unknown error");
-	sudo_warnx(U_("unable to initialize SSS source. Is SSSD installed on your machine?"));
+	sudo_warnx("%s",
+	    U_("unable to initialize SSS source. Is SSSD installed on your machine?"));
 	free(handle);
 	debug_return_int(EFAULT);
     }
@@ -610,8 +619,6 @@ sudo_sss_open(struct sudo_nss *nss)
 	debug_return_int(EFAULT);
     }
 
-    nss->handle = handle;
-
     /*
      * If runhost is the same as the local host, check for ipa_hostname
      * in sssd.conf and use it in preference to user_runhost.
@@ -622,6 +629,10 @@ sudo_sss_open(struct sudo_nss *nss)
 	    debug_return_int(ENOMEM);
 	}
     }
+
+    /* The "parse tree" contains userspecs, defaults, aliases and hostnames. */
+    init_parse_tree(&handle->parse_tree, handle->ipa_host, handle->ipa_shost);
+    nss->handle = handle;
 
     sudo_debug_printf(SUDO_DEBUG_DEBUG, "handle=%p", handle);
 
@@ -733,7 +744,7 @@ sudo_sss_getdefs(struct sudo_nss *nss)
 
     sudo_debug_printf(SUDO_DEBUG_DIAG, "Looking for cn=defaults");
 
-    /* NOTE: these are global defaults, user ID and name are not used. */
+    /* NOTE: these are global defaults, user-ID and name are not used. */
     rc = handle->fn_send_recv_defaults(sudo_user.pw->pw_uid,
 	sudo_user.pw->pw_name, &sss_error, &handle->domainname, &sss_result);
     switch (rc) {
@@ -741,7 +752,7 @@ sudo_sss_getdefs(struct sudo_nss *nss)
 	break;
     case ENOMEM:
 	sudo_warnx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
-	/* FALLTHROUGH */
+	FALLTHROUGH;
     default:
 	sudo_debug_printf(SUDO_DEBUG_ERROR,
 	    "handle->fn_send_recv_defaults: rc=%d, sss_error=%u", rc, sss_error);

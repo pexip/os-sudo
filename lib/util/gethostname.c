@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2015 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -21,8 +23,6 @@
 
 #include <config.h>
 
-#include <sys/types.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 

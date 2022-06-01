@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2010, 2013 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -17,6 +19,6 @@
 #ifndef SUDOERS_LINUX_AUDIT_H
 #define	SUDOERS_LINUX_AUDIT_H
 
-int	linux_audit_command(char *argv[], int result);
+int	linux_audit_command(char *const argv[], int result);
 
 #endif /* SUDOERS_LINUX_AUDIT_H */

@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2009-2019 Todd C. Miller <Todd.Miller@sudo.ws>
+ * SPDX-License-Identifier: ISC
+ *
+ * Copyright (c) 2009-2021 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,12 +30,7 @@
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -41,7 +38,6 @@
 #include <termios.h>		/* for struct winsize on HP-UX */
 
 #include "sudo.h"
-#include "sudo_event.h"
 #include "sudo_exec.h"
 #include "sudo_plugin.h"
 #include "sudo_plugin_int.h"
@@ -102,7 +98,7 @@ struct io_buffer {
 };
 SLIST_HEAD(io_buffer_list, io_buffer);
 
-static char slavename[PATH_MAX];
+static char ptyname[PATH_MAX];
 int io_fds[6] = { -1, -1, -1, -1, -1, -1};
 static bool foreground, pipeline;
 static int ttymode = TERM_COOKED;
@@ -114,7 +110,7 @@ static void del_io_events(bool nonblocking);
 static void sync_ttysize(struct exec_closure_pty *ec);
 static int safe_close(int fd);
 static void ev_free_by_fd(struct sudo_event_base *evbase, int fd);
-static void check_foreground(struct exec_closure_pty *ec);
+static pid_t check_foreground(struct exec_closure_pty *ec);
 static void add_io_events(struct sudo_event_base *evbase);
 static void schedule_signal(struct exec_closure_pty *ec, int signo);
 
@@ -129,15 +125,15 @@ pty_cleanup(void)
     if (io_fds[SFD_USERTTY] != -1)
 	sudo_term_restore(io_fds[SFD_USERTTY], false);
     if (utmp_user != NULL)
-	utmp_logout(slavename, 0);
+	utmp_logout(ptyname, 0);
 
     debug_return;
 }
 
 /*
  * Allocate a pty if /dev/tty is a tty.
- * Fills in io_fds[SFD_USERTTY], io_fds[SFD_MASTER], io_fds[SFD_SLAVE]
- * and slavename globals.
+ * Fills in io_fds[SFD_USERTTY], io_fds[SFD_LEADER], io_fds[SFD_FOLLOWER]
+ * and ptyname globals.
  */
 static bool
 pty_setup(struct command_details *details, const char *tty)
@@ -151,39 +147,42 @@ pty_setup(struct command_details *details, const char *tty)
 	debug_return_bool(false);
     }
 
-    if (!get_pty(&io_fds[SFD_MASTER], &io_fds[SFD_SLAVE],
-	slavename, sizeof(slavename), details->euid))
-	sudo_fatal(U_("unable to allocate pty"));
+    if (!get_pty(&io_fds[SFD_LEADER], &io_fds[SFD_FOLLOWER],
+	ptyname, sizeof(ptyname), details->cred.euid))
+	sudo_fatal("%s", U_("unable to allocate pty"));
+
+    /* Update tty name in command details (used by SELinux and AIX). */
+    details->tty = ptyname;
 
     /* Add entry to utmp/utmpx? */
     if (ISSET(details->flags, CD_SET_UTMP)) {
 	utmp_user =
 	    details->utmp_user ? details->utmp_user : user_details.username;
-	utmp_login(tty, slavename, io_fds[SFD_SLAVE], utmp_user);
+	utmp_login(tty, ptyname, io_fds[SFD_FOLLOWER], utmp_user);
     }
 
     sudo_debug_printf(SUDO_DEBUG_INFO,
-	"%s: %s fd %d, pty master fd %d, pty slave fd %d",
-	__func__, _PATH_TTY, io_fds[SFD_USERTTY], io_fds[SFD_MASTER],
-	io_fds[SFD_SLAVE]);
+	"%s: %s fd %d, pty leader fd %d, pty follower fd %d",
+	__func__, _PATH_TTY, io_fds[SFD_USERTTY], io_fds[SFD_LEADER],
+	io_fds[SFD_FOLLOWER]);
 
     debug_return_bool(true);
 }
 
 /*
- * Make the tty slave the controlling tty.
- * This is only used by the monitor but slavename[] is static.
+ * Make the tty follower the controlling tty.
+ * This is only used by the monitor but ptyname[] is static.
  */
 int
 pty_make_controlling(void)
 {
-    if (io_fds[SFD_SLAVE] != -1) {
+    if (io_fds[SFD_FOLLOWER] != -1) {
 #ifdef TIOCSCTTY
-	if (ioctl(io_fds[SFD_SLAVE], TIOCSCTTY, NULL) != 0)
+	if (ioctl(io_fds[SFD_FOLLOWER], TIOCSCTTY, NULL) != 0)
 	    return -1;
 #else
-	/* Set controlling tty by reopening slave. */
-	int fd = open(slavename, O_RDWR);
+	/* Set controlling tty by reopening pty follower. */
+	int fd = open(ptyname, O_RDWR);
 	if (fd == -1)
 	    return -1;
 	close(fd);
@@ -197,6 +196,7 @@ static bool
 log_ttyin(const char *buf, unsigned int n, struct io_buffer *iob)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     bool ret = true;
     debug_decl(log_ttyin, SUDO_DEBUG_EXEC);
@@ -207,11 +207,18 @@ log_ttyin(const char *buf, unsigned int n, struct io_buffer *iob)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_ttyin(buf, n);
+	    rc = plugin->u.io->log_ttyin(buf, n, &errstr);
 	    if (rc <= 0) {
 		if (rc < 0) {
 		    /* Error: disable plugin's I/O function. */
 		    plugin->u.io->log_ttyin = NULL;
+		    audit_error(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("I/O plugin error"),
+			iob->ec->details->info);
+		} else {
+		    audit_reject(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("command rejected by I/O plugin"),
+			iob->ec->details->info);
 		}
 		ret = false;
 		break;
@@ -229,6 +236,7 @@ static bool
 log_stdin(const char *buf, unsigned int n, struct io_buffer *iob)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     bool ret = true;
     debug_decl(log_stdin, SUDO_DEBUG_EXEC);
@@ -239,11 +247,18 @@ log_stdin(const char *buf, unsigned int n, struct io_buffer *iob)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_stdin(buf, n);
+	    rc = plugin->u.io->log_stdin(buf, n, &errstr);
 	    if (rc <= 0) {
 		if (rc < 0) {
 		    /* Error: disable plugin's I/O function. */
 		    plugin->u.io->log_stdin = NULL;
+		    audit_error(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("I/O plugin error"),
+			iob->ec->details->info);
+		} else {
+		    audit_reject(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("command rejected by I/O plugin"),
+			iob->ec->details->info);
 		}
 		ret = false;
 		break;
@@ -261,6 +276,7 @@ static bool
 log_ttyout(const char *buf, unsigned int n, struct io_buffer *iob)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     bool ret = true;
     debug_decl(log_ttyout, SUDO_DEBUG_EXEC);
@@ -271,11 +287,18 @@ log_ttyout(const char *buf, unsigned int n, struct io_buffer *iob)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_ttyout(buf, n);
+	    rc = plugin->u.io->log_ttyout(buf, n, &errstr);
 	    if (rc <= 0) {
 		if (rc < 0) {
 		    /* Error: disable plugin's I/O function. */
 		    plugin->u.io->log_ttyout = NULL;
+		    audit_error(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("I/O plugin error"),
+			iob->ec->details->info);
+		} else {
+		    audit_reject(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("command rejected by I/O plugin"),
+			iob->ec->details->info);
 		}
 		ret = false;
 		break;
@@ -304,6 +327,7 @@ static bool
 log_stdout(const char *buf, unsigned int n, struct io_buffer *iob)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     bool ret = true;
     debug_decl(log_stdout, SUDO_DEBUG_EXEC);
@@ -314,11 +338,18 @@ log_stdout(const char *buf, unsigned int n, struct io_buffer *iob)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_stdout(buf, n);
+	    rc = plugin->u.io->log_stdout(buf, n, &errstr);
 	    if (rc <= 0) {
 		if (rc < 0) {
 		    /* Error: disable plugin's I/O function. */
 		    plugin->u.io->log_stdout = NULL;
+		    audit_error(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("I/O plugin error"),
+			iob->ec->details->info);
+		} else {
+		    audit_reject(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("command rejected by I/O plugin"),
+			iob->ec->details->info);
 		}
 		ret = false;
 		break;
@@ -347,6 +378,7 @@ static bool
 log_stderr(const char *buf, unsigned int n, struct io_buffer *iob)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     bool ret = true;
     debug_decl(log_stderr, SUDO_DEBUG_EXEC);
@@ -357,11 +389,18 @@ log_stderr(const char *buf, unsigned int n, struct io_buffer *iob)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_stderr(buf, n);
+	    rc = plugin->u.io->log_stderr(buf, n, &errstr);
 	    if (rc <= 0) {
 		if (rc < 0) {
 		    /* Error: disable plugin's I/O function. */
 		    plugin->u.io->log_stderr = NULL;
+		    audit_error(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("I/O plugin error"),
+			iob->ec->details->info);
+		} else {
+		    audit_reject(plugin->name, SUDO_IO_PLUGIN,
+			errstr ? errstr : _("command rejected by I/O plugin"),
+			iob->ec->details->info);
 		}
 		ret = false;
 		break;
@@ -387,9 +426,10 @@ log_stderr(const char *buf, unsigned int n, struct io_buffer *iob)
 
 /* Call I/O plugin suspend log method. */
 static void
-log_suspend(int signo)
+log_suspend(struct exec_closure_pty *ec, int signo)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     debug_decl(log_suspend, SUDO_DEBUG_EXEC);
 
@@ -401,12 +441,13 @@ log_suspend(int signo)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->log_suspend(signo);
+	    rc = plugin->u.io->log_suspend(signo, &errstr);
 	    if (rc <= 0) {
-		if (rc < 0) {
-		    /* Error: disable plugin's I/O function. */
-		    plugin->u.io->log_suspend = NULL;
-		}
+		/* Error: disable plugin's I/O function. */
+		plugin->u.io->log_suspend = NULL;
+		audit_error(plugin->name, SUDO_IO_PLUGIN,
+		    errstr ? errstr : _("error logging suspend"),
+		    ec->details->info);
 		break;
 	    }
 	}
@@ -419,9 +460,10 @@ log_suspend(int signo)
 
 /* Call I/O plugin window change log method. */
 static void
-log_winchange(unsigned int rows, unsigned int cols)
+log_winchange(struct exec_closure_pty *ec, unsigned int rows, unsigned int cols)
 {
     struct plugin_container *plugin;
+    const char *errstr = NULL;
     sigset_t omask;
     debug_decl(log_winchange, SUDO_DEBUG_EXEC);
 
@@ -433,12 +475,13 @@ log_winchange(unsigned int rows, unsigned int cols)
 	    int rc;
 
 	    sudo_debug_set_active_instance(plugin->debug_instance);
-	    rc = plugin->u.io->change_winsize(rows, cols);
+	    rc = plugin->u.io->change_winsize(rows, cols, &errstr);
 	    if (rc <= 0) {
-		if (rc < 0) {
-		    /* Error: disable plugin's I/O function. */
-		    plugin->u.io->change_winsize = NULL;
-		}
+		/* Error: disable plugin's I/O function. */
+		plugin->u.io->change_winsize = NULL;
+		audit_error(plugin->name, SUDO_IO_PLUGIN,
+		    errstr ? errstr : _("error changing window size"),
+		    ec->details->info);
 		break;
 	    }
 	}
@@ -451,22 +494,25 @@ log_winchange(unsigned int rows, unsigned int cols)
 
 /*
  * Check whether we are running in the foregroup.
- * Updates the foreground global and does lazy init of the
- * the pty slave as needed.
+ * Updates the foreground global and updates the window size.
+ * Returns 0 if there is no tty, the foreground process group ID
+ * on success, or -1 on failure (tty revoked).
  */
-static void
+static pid_t
 check_foreground(struct exec_closure_pty *ec)
 {
+    int ret = 0;
     debug_decl(check_foreground, SUDO_DEBUG_EXEC);
 
     if (io_fds[SFD_USERTTY] != -1) {
-	foreground = tcgetpgrp(io_fds[SFD_USERTTY]) == ec->ppgrp;
+	if ((ret = tcgetpgrp(io_fds[SFD_USERTTY])) != -1) {
+	    foreground = ret == ec->ppgrp;
 
-	/* Also check for window size changes. */
-	sync_ttysize(ec);
+	    /* Also check for window size changes. */
+	    sync_ttysize(ec);
+	}
     }
-
-    debug_return;
+    debug_return_int(ret);
 }
 
 /*
@@ -489,8 +535,12 @@ suspend_sudo(struct exec_closure_pty *ec, int signo)
 	 * If sudo is already the foreground process, just resume the command
 	 * in the foreground.  If not, we'll suspend sudo and resume later.
 	 */
-	if (!foreground)
-	    check_foreground(ec);
+	if (!foreground) {
+	    if (check_foreground(ec) == -1) {
+		/* User's tty was revoked. */
+		break;
+	    }
+	}
 	if (foreground) {
 	    if (ttymode != TERM_RAW) {
 		if (sudo_term_raw(io_fds[SFD_USERTTY], 0))
@@ -499,7 +549,7 @@ suspend_sudo(struct exec_closure_pty *ec, int signo)
 	    ret = SIGCONT_FG; /* resume command in foreground */
 	    break;
 	}
-	/* FALLTHROUGH */
+	FALLTHROUGH;
     case SIGSTOP:
     case SIGTSTP:
 	/* Flush any remaining output and deschedule I/O events. */
@@ -510,10 +560,10 @@ suspend_sudo(struct exec_closure_pty *ec, int signo)
 	    sudo_term_restore(io_fds[SFD_USERTTY], false);
 
 	/* Log the suspend event. */
-	log_suspend(signo);
+	log_suspend(ec, signo);
 
 	if (sig2str(signo, signame) == -1)
-	    snprintf(signame, sizeof(signame), "%d", signo);
+	    (void)snprintf(signame, sizeof(signame), "%d", signo);
 
 	/* Suspend self and continue command when we resume. */
 	if (signo != SIGSTOP) {
@@ -529,10 +579,13 @@ suspend_sudo(struct exec_closure_pty *ec, int signo)
 	    sudo_warn("killpg(%d, SIG%s)", (int)ec->ppgrp, signame);
 
 	/* Log the resume event. */
-	log_suspend(SIGCONT);
+	log_suspend(ec, SIGCONT);
 
 	/* Check foreground/background status on resume. */
-	check_foreground(ec);
+	if (check_foreground(ec) == -1) {
+	    /* User's tty was revoked. */
+	    break;
+	}
 
 	/*
 	 * We always resume the command in the foreground if sudo itself
@@ -609,7 +662,7 @@ read_callback(int fd, int what, void *v)
     switch (n) {
 	case -1:
 	    if (got_sigttin) {
-		/* Schedule SIGTTIN to be forwared to the command. */
+		/* Schedule SIGTTIN to be forwarded to the command. */
 		schedule_signal(iob->ec, SIGTTIN);
 	    }
 	    if (errno == EAGAIN || errno == EINTR)
@@ -617,7 +670,7 @@ read_callback(int fd, int what, void *v)
 	    /* treat read error as fatal and close the fd */
 	    sudo_debug_printf(SUDO_DEBUG_ERROR,
 		"error reading fd %d: %s", fd, strerror(errno));
-	    /* FALLTHROUGH */
+	    FALLTHROUGH;
 	case 0:
 	    /* got EOF or pty has gone away */
 	    if (n == 0) {
@@ -644,12 +697,12 @@ read_callback(int fd, int what, void *v)
 	    /* Enable writer now that there is data in the buffer. */
 	    if (iob->wevent != NULL) {
 		if (sudo_ev_add(evbase, iob->wevent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	    /* Re-enable reader if buffer is not full. */
 	    if (iob->len != sizeof(iob->buf)) {
 		if (sudo_ev_add(evbase, iob->revent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	    break;
     }
@@ -714,10 +767,10 @@ write_callback(int fd, int what, void *v)
 	    break;
 	case EINTR:
 	    if (got_sigttou) {
-		/* Schedule SIGTTOU to be forwared to the command. */
+		/* Schedule SIGTTOU to be forwarded to the command. */
 		schedule_signal(iob->ec, SIGTTOU);
 	    }
-	    /* FALLTHROUGH */
+	    FALLTHROUGH;
 	case EAGAIN:
 	    /* not an error */
 	    break;
@@ -746,14 +799,14 @@ write_callback(int fd, int what, void *v)
 	/* Re-enable writer if buffer is not empty. */
 	if (iob->len > iob->off) {
 	    if (sudo_ev_add(evbase, iob->wevent, NULL, false) == -1)
-		sudo_fatal(U_("unable to add event to queue"));
+		sudo_fatal("%s", U_("unable to add event to queue"));
 	}
 	/* Enable reader if buffer is not full. */
 	if (iob->revent != NULL &&
 	    (ttymode == TERM_RAW || !USERTTY_EVENT(iob->revent))) {
 	    if (iob->len != sizeof(iob->buf)) {
 		if (sudo_ev_add(evbase, iob->revent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	}
     }
@@ -794,7 +847,7 @@ io_buf_new(int rfd, int wfd,
 }
 
 /*
- * We already closed the slave pty so reads from the master will not block.
+ * We already closed the follower so reads from the leader will not block.
  */
 static void
 pty_finish(struct command_status *cstat)
@@ -829,7 +882,7 @@ pty_finish(struct command_status *cstat)
 
     /* Update utmp */
     if (utmp_user != NULL)
-	utmp_logout(slavename, cstat->type == CMD_WSTATUS ? cstat->val : 0);
+	utmp_logout(ptyname, cstat->type == CMD_WSTATUS ? cstat->val : 0);
 
     debug_return;
 }
@@ -841,7 +894,7 @@ static void
 send_command_status(struct exec_closure_pty *ec, int type, int val)
 {
     struct monitor_message *msg;
-    debug_decl(send_command, SUDO_DEBUG_EXEC)
+    debug_decl(send_command, SUDO_DEBUG_EXEC);
 
     if ((msg = calloc(1, sizeof(*msg))) == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
@@ -850,7 +903,7 @@ send_command_status(struct exec_closure_pty *ec, int type, int val)
     TAILQ_INSERT_TAIL(&ec->monitor_messages, msg, entries);
 
     if (sudo_ev_add(ec->evbase, ec->fwdchannel_event, NULL, true) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     /* Restart event loop to send the command immediately. */
     sudo_ev_loopcontinue(ec->evbase);
@@ -865,14 +918,17 @@ static void
 schedule_signal(struct exec_closure_pty *ec, int signo)
 {
     char signame[SIG2STR_MAX];
-    debug_decl(schedule_signal, SUDO_DEBUG_EXEC)
+    debug_decl(schedule_signal, SUDO_DEBUG_EXEC);
+
+    if (signo == 0)
+	debug_return;
 
     if (signo == SIGCONT_FG)
 	strlcpy(signame, "CONT_FG", sizeof(signame));
     else if (signo == SIGCONT_BG)
 	strlcpy(signame, "CONT_BG", sizeof(signame));
     else if (sig2str(signo, signame) == -1)
-	snprintf(signame, sizeof(signame), "%d", signo);
+	(void)snprintf(signame, sizeof(signame), "%d", signo);
     sudo_debug_printf(SUDO_DEBUG_DIAG, "scheduled SIG%s for command", signame);
 
     send_command_status(ec, CMD_SIGNO, signo);
@@ -886,7 +942,7 @@ backchannel_cb(int fd, int what, void *v)
     struct exec_closure_pty *ec = v;
     struct command_status cstat;
     ssize_t nread;
-    debug_decl(backchannel_cb, SUDO_DEBUG_EXEC)
+    debug_decl(backchannel_cb, SUDO_DEBUG_EXEC);
 
     /*
      * Read command status from the monitor.
@@ -981,7 +1037,7 @@ handle_sigchld_pty(struct exec_closure_pty *ec)
 {
     int n, status;
     pid_t pid;
-    debug_decl(handle_sigchld_pty, SUDO_DEBUG_EXEC)
+    debug_decl(handle_sigchld_pty, SUDO_DEBUG_EXEC);
 
     /*
      * Monitor process was signaled; wait for it as needed.
@@ -992,7 +1048,7 @@ handle_sigchld_pty(struct exec_closure_pty *ec)
     switch (pid) {
     case 0:
 	errno = ECHILD;
-	/* FALLTHROUGH */
+	FALLTHROUGH;
     case -1:
 	sudo_warn(U_("%s: %s"), __func__, "waitpid");
 	debug_return;
@@ -1014,7 +1070,7 @@ handle_sigchld_pty(struct exec_closure_pty *ec)
     } else if (WIFSIGNALED(status)) {
 	char signame[SIG2STR_MAX];
 	if (sig2str(WTERMSIG(status), signame) == -1)
-	    snprintf(signame, sizeof(signame), "%d", WTERMSIG(status));
+	    (void)snprintf(signame, sizeof(signame), "%d", WTERMSIG(status));
 	sudo_debug_printf(SUDO_DEBUG_INFO, "%s: monitor (%d) killed, SIG%s",
 	    __func__, (int)ec->monitor_pid, signame);
 	ec->monitor_pid = -1;
@@ -1033,13 +1089,13 @@ signal_cb_pty(int signo, int what, void *v)
     struct sudo_ev_siginfo_container *sc = v;
     struct exec_closure_pty *ec = sc->closure;
     char signame[SIG2STR_MAX];
-    debug_decl(signal_cb_pty, SUDO_DEBUG_EXEC)
+    debug_decl(signal_cb_pty, SUDO_DEBUG_EXEC);
 
     if (ec->monitor_pid == -1)
 	debug_return;
 
     if (sig2str(signo, signame) == -1)
-	snprintf(signame, sizeof(signame), "%d", signo);
+	(void)snprintf(signame, sizeof(signame), "%d", signo);
     sudo_debug_printf(SUDO_DEBUG_DIAG,
 	"%s: evbase %p, monitor: %d, signo %s(%d), cstat %p", __func__,
 	ec->evbase, (int)ec->monitor_pid, signame, signo, ec->cstat);
@@ -1067,7 +1123,7 @@ signal_cb_pty(int signo, int what, void *v)
 		debug_return;
 	    }
 	}
-	/* Schedule signal to be forwared to the command. */
+	/* Schedule signal to be forwarded to the command. */
 	schedule_signal(ec, signo);
 	break;
     }
@@ -1086,7 +1142,7 @@ fwdchannel_cb(int sock, int what, void *v)
     char signame[SIG2STR_MAX];
     struct monitor_message *msg;
     ssize_t nsent;
-    debug_decl(fwdchannel_cb, SUDO_DEBUG_EXEC)
+    debug_decl(fwdchannel_cb, SUDO_DEBUG_EXEC);
 
     while ((msg = TAILQ_FIRST(&ec->monitor_messages)) != NULL) {
 	switch (msg->cstat.type) {
@@ -1096,7 +1152,7 @@ fwdchannel_cb(int sock, int what, void *v)
 	    else if (msg->cstat.val == SIGCONT_BG)
 		strlcpy(signame, "CONT_BG", sizeof(signame));
 	    else if (sig2str(msg->cstat.val, signame) == -1)
-		snprintf(signame, sizeof(signame), "%d", msg->cstat.val);
+		(void)snprintf(signame, sizeof(signame), "%d", msg->cstat.val);
 	    sudo_debug_printf(SUDO_DEBUG_INFO,
 		"sending SIG%s to monitor over backchannel", signame);
 	    break;
@@ -1143,7 +1199,7 @@ static void
 fill_exec_closure_pty(struct exec_closure_pty *ec, struct command_status *cstat,
     struct command_details *details, pid_t ppgrp, int backchannel)
 {
-    debug_decl(fill_exec_closure_pty, SUDO_DEBUG_EXEC)
+    debug_decl(fill_exec_closure_pty, SUDO_DEBUG_EXEC);
 
     /* Fill in the non-event part of the closure. */
     ec->cmnd_pid = -1;
@@ -1154,10 +1210,13 @@ fill_exec_closure_pty(struct exec_closure_pty *ec, struct command_status *cstat,
     ec->cols = user_details.ts_cols;
     TAILQ_INIT(&ec->monitor_messages);
 
+    /* Reset cstat for running the command. */
+    cstat->type = CMD_INVALID;
+    cstat->val = 0;
+
     /* Setup event base and events. */
-    ec->evbase = sudo_ev_base_alloc();
-    if (ec->evbase == NULL)
-	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
+    ec->evbase = details->evbase;
+    details->evbase = NULL;
 
     /* Event for command status via backchannel. */
     ec->backchannel_event = sudo_ev_alloc(backchannel,
@@ -1165,7 +1224,7 @@ fill_exec_closure_pty(struct exec_closure_pty *ec, struct command_status *cstat,
     if (ec->backchannel_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->backchannel_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
     sudo_debug_printf(SUDO_DEBUG_INFO, "backchannel fd %d\n", backchannel);
 
     /* Events for local signals. */
@@ -1174,70 +1233,70 @@ fill_exec_closure_pty(struct exec_closure_pty *ec, struct command_status *cstat,
     if (ec->sigint_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigint_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigquit_event = sudo_ev_alloc(SIGQUIT,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigquit_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigquit_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigtstp_event = sudo_ev_alloc(SIGTSTP,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigtstp_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigtstp_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigterm_event = sudo_ev_alloc(SIGTERM,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigterm_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigterm_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sighup_event = sudo_ev_alloc(SIGHUP,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sighup_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sighup_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigalrm_event = sudo_ev_alloc(SIGALRM,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigalrm_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigalrm_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigusr1_event = sudo_ev_alloc(SIGUSR1,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigusr1_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigusr1_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigusr2_event = sudo_ev_alloc(SIGUSR2,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigusr2_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigusr2_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigchld_event = sudo_ev_alloc(SIGCHLD,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigchld_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigchld_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     ec->sigwinch_event = sudo_ev_alloc(SIGWINCH,
 	SUDO_EV_SIGINFO, signal_cb_pty, ec);
     if (ec->sigwinch_event == NULL)
 	sudo_fatalx(U_("%s: %s"), __func__, U_("unable to allocate memory"));
     if (sudo_ev_add(ec->evbase, ec->sigwinch_event, NULL, false) == -1)
-	sudo_fatal(U_("unable to add event to queue"));
+	sudo_fatal("%s", U_("unable to add event to queue"));
 
     /* The signal forwarding event gets added on demand. */
     ec->fwdchannel_event = sudo_ev_alloc(backchannel,
@@ -1258,7 +1317,7 @@ static void
 free_exec_closure_pty(struct exec_closure_pty *ec)
 {
     struct monitor_message *msg;
-    debug_decl(free_exec_closure_pty, SUDO_DEBUG_EXEC)
+    debug_decl(free_exec_closure_pty, SUDO_DEBUG_EXEC);
 
     sudo_ev_base_free(ec->evbase);
     sudo_ev_free(ec->backchannel_event);
@@ -1283,7 +1342,7 @@ free_exec_closure_pty(struct exec_closure_pty *ec)
 }
 
 /*
- * Execute a command in a pty, potentially with I/O loggging, and
+ * Execute a command in a pty, potentially with I/O logging, and
  * wait for it to finish.
  * This is a little bit tricky due to how POSIX job control works and
  * we fact that we have two different controlling terminals to deal with.
@@ -1295,12 +1354,13 @@ exec_pty(struct command_details *details, struct command_status *cstat)
     bool interpose[3] = { false, false, false };
     struct exec_closure_pty ec = { 0 };
     struct plugin_container *plugin;
+    int evloop_retries = -1;
     sigset_t set, oset;
     struct sigaction sa;
     struct stat sb;
     pid_t ppgrp;
     int sv[2];
-    debug_decl(exec_pty, SUDO_DEBUG_EXEC)
+    debug_decl(exec_pty, SUDO_DEBUG_EXEC);
 
     /*
      * Allocate a pty.
@@ -1316,8 +1376,10 @@ exec_pty(struct command_details *details, struct command_status *cstat)
      * We communicate with the monitor over a bi-directional pair of sockets.
      * Parent sends signal info to monitor and monitor sends back wait status.
      */
-    if (socketpair(PF_UNIX, SOCK_STREAM, 0, sv) == -1)
-	sudo_fatal(U_("unable to create sockets"));
+    if (socketpair(PF_UNIX, SOCK_STREAM, 0, sv) == -1 ||
+	    fcntl(sv[0], F_SETFD, FD_CLOEXEC) == -1 ||
+	    fcntl(sv[1], F_SETFD, FD_CLOEXEC) == -1)
+	sudo_fatal("%s", U_("unable to create sockets"));
 
     /*
      * We don't want to receive SIGTTIN/SIGTTOU.
@@ -1337,7 +1399,7 @@ exec_pty(struct command_details *details, struct command_status *cstat)
      * or certain pam modules won't be able to track their state.
      */
     if (policy_init_session(details) != true)
-	sudo_fatalx(U_("policy plugin failed session initialization"));
+	sudo_fatalx("%s", U_("policy plugin failed session initialization"));
 
     /*
      * Child will run the command in the pty, parent will pass data
@@ -1369,19 +1431,19 @@ exec_pty(struct command_details *details, struct command_status *cstat)
      * In background mode there is no stdin.
      */
     if (!ISSET(details->flags, CD_BACKGROUND))
-	io_fds[SFD_STDIN] = io_fds[SFD_SLAVE];
-    io_fds[SFD_STDOUT] = io_fds[SFD_SLAVE];
-    io_fds[SFD_STDERR] = io_fds[SFD_SLAVE];
+	io_fds[SFD_STDIN] = io_fds[SFD_FOLLOWER];
+    io_fds[SFD_STDOUT] = io_fds[SFD_FOLLOWER];
+    io_fds[SFD_STDERR] = io_fds[SFD_FOLLOWER];
 
     if (io_fds[SFD_USERTTY] != -1) {
-	/* Read from /dev/tty, write to pty master */
+	/* Read from /dev/tty, write to pty leader */
 	if (!ISSET(details->flags, CD_BACKGROUND)) {
-	    io_buf_new(io_fds[SFD_USERTTY], io_fds[SFD_MASTER],
+	    io_buf_new(io_fds[SFD_USERTTY], io_fds[SFD_LEADER],
 		log_ttyin, &ec, &iobufs);
 	}
 
-	/* Read from pty master, write to /dev/tty */
-	io_buf_new(io_fds[SFD_MASTER], io_fds[SFD_USERTTY],
+	/* Read from pty leader, write to /dev/tty */
+	io_buf_new(io_fds[SFD_LEADER], io_fds[SFD_USERTTY],
 	    log_ttyout, &ec, &iobufs);
 
 	/* Are we the foreground process? */
@@ -1406,8 +1468,8 @@ exec_pty(struct command_details *details, struct command_status *cstat)
 	    sudo_debug_printf(SUDO_DEBUG_INFO,
 		"stdin not a tty, creating a pipe");
 	    pipeline = true;
-	    if (pipe(io_pipe[STDIN_FILENO]) != 0)
-		sudo_fatal(U_("unable to create pipe"));
+	    if (pipe2(io_pipe[STDIN_FILENO], O_CLOEXEC) != 0)
+		sudo_fatal("%s", U_("unable to create pipe"));
 	    io_buf_new(STDIN_FILENO, io_pipe[STDIN_FILENO][1],
 		log_stdin, &ec, &iobufs);
 	    io_fds[SFD_STDIN] = io_pipe[STDIN_FILENO][0];
@@ -1427,8 +1489,8 @@ exec_pty(struct command_details *details, struct command_status *cstat)
 	    sudo_debug_printf(SUDO_DEBUG_INFO,
 		"stdout not a tty, creating a pipe");
 	    pipeline = true;
-	    if (pipe(io_pipe[STDOUT_FILENO]) != 0)
-		sudo_fatal(U_("unable to create pipe"));
+	    if (pipe2(io_pipe[STDOUT_FILENO], O_CLOEXEC) != 0)
+		sudo_fatal("%s", U_("unable to create pipe"));
 	    io_buf_new(io_pipe[STDOUT_FILENO][0], STDOUT_FILENO,
 		log_stdout, &ec, &iobufs);
 	    io_fds[SFD_STDOUT] = io_pipe[STDOUT_FILENO][1];
@@ -1447,8 +1509,8 @@ exec_pty(struct command_details *details, struct command_status *cstat)
 	} else {
 	    sudo_debug_printf(SUDO_DEBUG_INFO,
 		"stderr not a tty, creating a pipe");
-	    if (pipe(io_pipe[STDERR_FILENO]) != 0)
-		sudo_fatal(U_("unable to create pipe"));
+	    if (pipe2(io_pipe[STDERR_FILENO], O_CLOEXEC) != 0)
+		sudo_fatal("%s", U_("unable to create pipe"));
 	    io_buf_new(io_pipe[STDERR_FILENO][0], STDERR_FILENO,
 		log_stderr, &ec, &iobufs);
 	    io_fds[SFD_STDERR] = io_pipe[STDERR_FILENO][1];
@@ -1456,8 +1518,8 @@ exec_pty(struct command_details *details, struct command_status *cstat)
     }
 
     if (foreground) {
-	/* Copy terminal attrs from user tty -> pty slave. */
-	if (!sudo_term_copy(io_fds[SFD_USERTTY], io_fds[SFD_SLAVE])) {
+	/* Copy terminal attrs from user tty -> pty follower. */
+	if (!sudo_term_copy(io_fds[SFD_USERTTY], io_fds[SFD_FOLLOWER])) {
             sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_ERRNO,
                 "%s: unable to copy terminal settings to pty", __func__);
 	    foreground = false;
@@ -1486,12 +1548,11 @@ exec_pty(struct command_details *details, struct command_status *cstat)
     ec.monitor_pid = sudo_debug_fork();
     switch (ec.monitor_pid) {
     case -1:
-	sudo_fatal(U_("unable to fork"));
+	sudo_fatal("%s", U_("unable to fork"));
 	break;
     case 0:
 	/* child */
 	close(sv[0]);
-	(void)fcntl(sv[1], F_SETFD, FD_CLOEXEC);
 	/* Close the other end of the stdin/stdout/stderr pipes and exec. */
 	if (io_pipe[STDIN_FILENO][1] != -1)
 	    close(io_pipe[STDIN_FILENO][1]);
@@ -1512,25 +1573,25 @@ exec_pty(struct command_details *details, struct command_status *cstat)
             sudo_debug_printf(SUDO_DEBUG_ERROR|SUDO_DEBUG_ERRNO,
                 "%s: unable to send status to parent", __func__);
 	}
-	_exit(1);
+	_exit(EXIT_FAILURE);
     }
 
     /*
-     * We close the pty slave so only the monitor and command have a
+     * We close the pty follower so only the monitor and command have a
      * reference to it.  This ensures that we can don't block reading
-     * from the master when the command and monitor have exited.
+     * from the leader when the command and monitor have exited.
      */
-    if (io_fds[SFD_SLAVE] != -1) {
-	close(io_fds[SFD_SLAVE]);
-	io_fds[SFD_SLAVE] = -1;
+    if (io_fds[SFD_FOLLOWER] != -1) {
+	close(io_fds[SFD_FOLLOWER]);
+	io_fds[SFD_FOLLOWER] = -1;
     }
 
-    /* Tell the monitor to continue now that the slave is closed. */
+    /* Tell the monitor to continue now that the follower is closed. */
     cstat->type = CMD_SIGNO;
     cstat->val = 0;
     while (send(sv[0], cstat, sizeof(*cstat), 0) == -1) {
 	if (errno != EINTR && errno != EAGAIN)
-	    sudo_fatal(U_("unable to send message to monitor process"));
+	    sudo_fatal("%s", U_("unable to send message to monitor process"));
     }
 
     /* Close the other end of the stdin/stdout/stderr pipes and socketpair. */
@@ -1568,17 +1629,40 @@ exec_pty(struct command_details *details, struct command_status *cstat)
     setlocale(LC_ALL, "C");
 
     /*
-     * In the event loop we pass input from user tty to master
-     * and pass output from master to stdout and IO plugin.
+     * In the event loop we pass input from user tty to leader
+     * and pass output from leader to stdout and IO plugin.
+     * Try to recover on ENXIO, it means the tty was revoked.
      */
     add_io_events(ec.evbase);
-    if (sudo_ev_dispatch(ec.evbase) == -1)
-	sudo_warn(U_("error in event loop"));
-    if (sudo_ev_got_break(ec.evbase)) {
-	/* error from callback or monitor died */
-	sudo_debug_printf(SUDO_DEBUG_ERROR, "event loop exited prematurely");
-	/* XXX - may need to terminate command if cmnd_pid != -1 */
-    }
+    do {
+	if (sudo_ev_dispatch(ec.evbase) == -1)
+	    sudo_warn("%s", U_("error in event loop"));
+	if (sudo_ev_got_break(ec.evbase)) {
+	    /* error from callback or monitor died */
+	    sudo_debug_printf(SUDO_DEBUG_ERROR, "event loop exited prematurely");
+	    /* XXX: no good way to know if we should terminate the command. */
+	    if (cstat->val == CMD_INVALID && ec.cmnd_pid != -1) {
+		/* no status message, kill command */
+		terminate_command(ec.cmnd_pid, true);
+		ec.cmnd_pid = -1;
+		/* TODO: need way to pass an error to the sudo front end */
+		cstat->type = CMD_WSTATUS;
+		cstat->val = W_EXITCODE(1, SIGKILL);
+	    }
+	} else if (!sudo_ev_got_exit(ec.evbase)) {
+	    switch (errno) {
+	    case ENXIO:
+	    case EIO:
+	    case EBADF:
+		/* /dev/tty was revoked, remove tty events and retry (once) */
+		if (evloop_retries == -1 && io_fds[SFD_USERTTY] != -1) {
+		    ev_free_by_fd(ec.evbase, io_fds[SFD_USERTTY]);
+		    evloop_retries = 1;
+		}
+		break;
+	    }
+	}
+    } while (evloop_retries-- > 0);
 
     /* Flush any remaining output, free I/O bufs and events, do logout. */
     pty_finish(cstat);
@@ -1613,7 +1697,7 @@ add_io_events(struct sudo_event_base *evbase)
 		    "added I/O revent %p, fd %d, events %d",
 		    iob->revent, iob->revent->fd, iob->revent->events);
 		if (sudo_ev_add(evbase, iob->revent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	}
 	if (iob->wevent != NULL) {
@@ -1623,7 +1707,7 @@ add_io_events(struct sudo_event_base *evbase)
 		    "added I/O wevent %p, fd %d, events %d",
 		    iob->wevent, iob->wevent->fd, iob->wevent->events);
 		if (sudo_ev_add(evbase, iob->wevent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	}
     }
@@ -1668,14 +1752,14 @@ del_io_events(bool nonblocking)
 	if (iob->revent != NULL && !USERTTY_EVENT(iob->revent)) {
 	    if (iob->len != sizeof(iob->buf)) {
 		if (sudo_ev_add(evbase, iob->revent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	}
 	/* Flush any write buffers with data in them. */
 	if (iob->wevent != NULL) {
 	    if (iob->len > iob->off) {
 		if (sudo_ev_add(evbase, iob->wevent, NULL, false) == -1)
-		    sudo_fatal(U_("unable to add event to queue"));
+		    sudo_fatal("%s", U_("unable to add event to queue"));
 	    }
 	}
     }
@@ -1702,7 +1786,7 @@ del_io_events(bool nonblocking)
 	    if (iob->wevent != NULL) {
 		if (iob->len > iob->off) {
 		    if (sudo_ev_add(evbase, iob->wevent, NULL, false) == -1)
-			sudo_fatal(U_("unable to add event to queue"));
+			sudo_fatal("%s", U_("unable to add event to queue"));
 		}
 	    }
 	}
@@ -1744,7 +1828,7 @@ sync_ttysize(struct exec_closure_pty *ec)
 		((wsize.ws_col & 0xffff) << 16);
 
 	    /* Log window change event. */
-	    log_winchange(wsize.ws_row, wsize.ws_col);
+	    log_winchange(ec, wsize.ws_row, wsize.ws_col);
 
 	    /* Send window change event to monitor process. */
 	    send_command_status(ec, CMD_TTYWINCH, wsize_packed);

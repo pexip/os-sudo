@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2014 Theo de Raadt <deraadt@openbsd.org>
  * Copyright (c) 2014 Bob Beck <beck@obtuse.com>
  *
@@ -98,6 +100,22 @@ static int gotdata(char *buf, size_t len);
 static int getentropy_phdr(struct dl_phdr_info *info, size_t size, void *data);
 #endif
 
+static void *
+mmap_anon(void *addr, size_t len, int prot, int flags, off_t offset)
+{
+#ifdef MAP_ANON
+	return mmap(addr, len, prot, flags | MAP_ANON, -1, offset);
+#else
+	int fd;
+
+	if ((fd = open("/dev/zero", O_RDWR)) == -1)
+		return MAP_FAILED;
+	addr = mmap(addr, len, prot, flags, fd, offset);
+	close(fd);
+	return addr;
+#endif
+}
+
 int
 sudo_getentropy(void *buf, size_t len)
 {
@@ -164,7 +182,7 @@ sudo_getentropy(void *buf, size_t len)
  */
 
 /*
- * Basic sanity checking; wish we could do better.
+ * Basic validity checking; wish we could do better.
  */
 static int
 gotdata(char *buf, size_t len)
@@ -204,7 +222,7 @@ start:
 	fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) | FD_CLOEXEC);
 #endif
 
-	/* Lightly verify that the device node looks sane */
+	/* Lightly verify that the device node looks OK */
 	if (fstat(fd, &st) == -1 || !S_ISCHR(st.st_mode)) {
 		close(fd);
 		goto nodevrandom;
@@ -381,7 +399,7 @@ getentropy_fallback(void *buf, size_t len)
 	struct timespec ts;
 	struct timeval tv;
 	struct rusage ru;
-	sigset_t sigset;
+	sigset_t set;
 	struct stat st;
 	struct sudo_digest *ctx;
 	static pid_t lastpid;
@@ -433,9 +451,8 @@ getentropy_fallback(void *buf, size_t len)
 				(void) nanosleep(&ts, NULL);
 			}
 
-			HX(sigpending(&sigset) == -1, sigset);
-			HX(sigprocmask(SIG_BLOCK, NULL, &sigset) == -1,
-			    sigset);
+			HX(sigpending(&set) == -1, set);
+			HX(sigprocmask(SIG_BLOCK, NULL, &set) == -1, set);
 
 			HF(sudo_getentropy);	/* an addr in this library */
 			HF(printf);		/* an addr in libc */
@@ -468,10 +485,10 @@ getentropy_fallback(void *buf, size_t len)
 				};
 
 				for (m = 0; m < sizeof mm/sizeof(mm[0]); m++) {
-					HX(mm[m].p = mmap(NULL,
+					HX(mm[m].p = mmap_anon(NULL,
 					    mm[m].npg * pgs,
 					    PROT_READ|PROT_WRITE,
-					    MAP_PRIVATE|MAP_ANON, -1,
+					    MAP_PRIVATE,
 					    (off_t)0), mm[m].p);
 					if (mm[m].p != MAP_FAILED) {
 						size_t mo;
@@ -485,6 +502,7 @@ getentropy_fallback(void *buf, size_t len)
 						    / pgs);
 					}
 
+#ifdef HAVE_CLOCK_GETTIME
 					/* Check cnts and times... */
 					for (ii = 0; ii < sizeof(cl)/sizeof(cl[0]);
 					    ii++) {
@@ -493,6 +511,7 @@ getentropy_fallback(void *buf, size_t len)
 						if (e != -1)
 							cnt += (int)ts.tv_nsec;
 					}
+#endif /* HAVE_CLOCK_GETTIME */
 
 					HX((e = getrusage(RUSAGE_SELF,
 					    &ru)) == -1, ru);
@@ -595,10 +614,8 @@ getentropy_fallback(void *buf, size_t len)
 	}
 done:
 	sudo_digest_free(ctx);
-	if (results != NULL) {
-		memset_s(results, sizeof(results), 0, sizeof(results));
-		free(results);
-	}
+	if (results != NULL)
+		freezero(results, sizeof(results));
 	return (ret);
 }
 

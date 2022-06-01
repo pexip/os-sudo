@@ -1,4 +1,6 @@
 /*
+ * SPDX-License-Identifier: ISC
+ *
  * Copyright (c) 2010-2013, 2015-2017 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -43,7 +45,7 @@ struct cache_item {
 
 /*
  * Container structs to simpify size and offset calculations and guarantee
- * proper aligment of struct passwd, group, gid_list and group_list.
+ * proper alignment of struct passwd, group, gid_list and group_list.
  */
 struct cache_item_pw {
     struct cache_item cache;

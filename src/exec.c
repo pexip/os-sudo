@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2009-2017 Todd C. Miller <Todd.Miller@sudo.ws>
+ * SPDX-License-Identifier: ISC
+ *
+ * Copyright (c) 2009-2021 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -21,17 +23,10 @@
 
 #include <config.h>
 
-#include <sys/types.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
-#include <stdio.h>
 #include <stdlib.h>
-#ifdef HAVE_STRING_H
-# include <string.h>
-#endif /* HAVE_STRING_H */
-#ifdef HAVE_STRINGS_H
-# include <strings.h>
-#endif /* HAVE_STRINGS_H */
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -50,52 +45,32 @@
 
 #include "sudo.h"
 #include "sudo_exec.h"
-#include "sudo_event.h"
 #include "sudo_plugin.h"
 #include "sudo_plugin_int.h"
 
-#ifdef __linux__
-static struct rlimit nproclimit;
-#endif
-
-/*
- * Unlimit the number of processes since Linux's setuid() will
- * apply resource limits when changing uid and return EAGAIN if
- * nproc would be exceeded by the uid switch.
- */
 static void
-unlimit_nproc(void)
+close_fds(struct command_details *details, int errfd)
 {
-#ifdef __linux__
-    struct rlimit rl;
-    debug_decl(unlimit_nproc, SUDO_DEBUG_UTIL)
+    int fd, maxfd;
+    unsigned char *debug_fds;
+    debug_decl(close_fds, SUDO_DEBUG_EXEC);
 
-    if (getrlimit(RLIMIT_NPROC, &nproclimit) != 0)
-	sudo_warn("getrlimit");
-    rl.rlim_cur = rl.rlim_max = RLIM_INFINITY;
-    if (setrlimit(RLIMIT_NPROC, &rl) != 0) {
-	rl.rlim_cur = rl.rlim_max = nproclimit.rlim_max;
-	if (setrlimit(RLIMIT_NPROC, &rl) != 0)
-	    sudo_warn("setrlimit");
+    if (details->closefrom < 0)
+	debug_return;
+
+    /* Preserve debug fds and error pipe as needed. */
+    maxfd = sudo_debug_get_fds(&debug_fds);
+    for (fd = 0; fd <= maxfd; fd++) {
+	if (sudo_isset(debug_fds, fd))
+	    add_preserved_fd(&details->preserved_fds, fd);
     }
-    debug_return;
-#endif /* __linux__ */
-}
+    if (errfd != -1)
+	add_preserved_fd(&details->preserved_fds, errfd);
 
-/*
- * Restore saved value of RLIMIT_NPROC.
- */
-static void
-restore_nproc(void)
-{
-#ifdef __linux__
-    debug_decl(restore_nproc, SUDO_DEBUG_UTIL)
-
-    if (setrlimit(RLIMIT_NPROC, &nproclimit) != 0)
-	sudo_warn("setrlimit");
+    /* Close all fds except those explicitly preserved. */
+    closefrom_except(details->closefrom, &details->preserved_fds);
 
     debug_return;
-#endif /* __linux__ */
 }
 
 /*
@@ -104,22 +79,10 @@ restore_nproc(void)
  * Returns true on success and false on failure.
  */
 static bool
-exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
+exec_setup(struct command_details *details, int errfd)
 {
     bool ret = false;
-    debug_decl(exec_setup, SUDO_DEBUG_EXEC)
-
-#ifdef HAVE_SELINUX
-    if (ISSET(details->flags, CD_RBAC_ENABLED)) {
-	if (selinux_setup(details->selinux_role, details->selinux_type,
-	    ptyname ? ptyname : user_details.tty, ptyfd) == -1)
-	    goto done;
-    }
-#endif
-
-    /* Restore coredumpsize resource limit before running. */
-    if (sudo_conf_disable_coredump())
-	disable_coredump(true);
+    debug_decl(exec_setup, SUDO_DEBUG_EXEC);
 
     if (details->pw != NULL) {
 #ifdef HAVE_PROJECT_H
@@ -146,7 +109,7 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
 #endif /* HAVE_PRIV_SET */
 
 #ifdef HAVE_GETUSERATTR
-	if (aix_prep_user(details->pw->pw_name, ptyname ? ptyname : user_details.tty) != 0) {
+	if (aix_prep_user(details->pw->pw_name, details->tty) != 0) {
 	    /* error message displayed by aix_prep_user */
 	    goto done;
 	}
@@ -157,8 +120,8 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
 	    login_cap_t *lc;
 
 	    /*
-	     * We only use setusercontext() to set the nice value and rlimits
-	     * unless this is a login shell (sudo -i).
+	     * We only use setusercontext() to set the nice value, rlimits
+	     * and umask unless this is a login shell (sudo -i).
 	     */
 	    lc = login_getclass((char *)details->login_class);
 	    if (!lc) {
@@ -170,12 +133,11 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
 		/* Set everything except user, group and login name. */
 		flags = LOGIN_SETALL;
 		CLR(flags, LOGIN_SETGROUP|LOGIN_SETLOGIN|LOGIN_SETUSER|LOGIN_SETENV|LOGIN_SETPATH);
-		CLR(details->flags, CD_SET_UMASK); /* LOGIN_UMASK instead */
 	    } else {
-		flags = LOGIN_SETRESOURCES|LOGIN_SETPRIORITY;
+		flags = LOGIN_SETRESOURCES|LOGIN_SETPRIORITY|LOGIN_SETUMASK;
 	    }
 	    if (setusercontext(lc, details->pw, details->pw->pw_uid, flags)) {
-		sudo_warn(U_("unable to set user context"));
+		sudo_warn("%s", U_("unable to set user context"));
 		if (details->pw->pw_uid != ROOT_UID)
 		    goto done;
 	    }
@@ -191,12 +153,18 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
 
     if (ISSET(details->flags, CD_SET_PRIORITY)) {
 	if (setpriority(PRIO_PROCESS, 0, details->priority) != 0) {
-	    sudo_warn(U_("unable to set process priority"));
+	    sudo_warn("%s", U_("unable to set process priority"));
 	    goto done;
 	}
     }
-    if (ISSET(details->flags, CD_SET_UMASK))
+
+    /* Policy may override umask in PAM or login.conf. */
+    if (ISSET(details->flags, CD_OVERRIDE_UMASK))
 	(void) umask(details->umask);
+
+    /* Close fds before chroot (need /dev) or uid change (prlimit on Linux). */
+    close_fds(details, errfd);
+
     if (details->chroot) {
 	if (chroot(details->chroot) != 0 || chdir("/") != 0) {
 	    sudo_warn(U_("unable to change root to %s"), details->chroot);
@@ -204,29 +172,29 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
 	}
     }
 
-    /* 
+    /*
      * Unlimit the number of processes since Linux's setuid() will
      * return EAGAIN if RLIMIT_NPROC would be exceeded by the uid switch.
      */
     unlimit_nproc();
 
 #if defined(HAVE_SETRESUID)
-    if (setresuid(details->uid, details->euid, details->euid) != 0) {
+    if (setresuid(details->cred.uid, details->cred.euid, details->cred.euid) != 0) {
 	sudo_warn(U_("unable to change to runas uid (%u, %u)"),
-	    (unsigned int)details->uid, (unsigned int)details->euid);
+	    (unsigned int)details->cred.uid, (unsigned int)details->cred.euid);
 	goto done;
     }
 #elif defined(HAVE_SETREUID)
-    if (setreuid(details->uid, details->euid) != 0) {
+    if (setreuid(details->cred.uid, details->cred.euid) != 0) {
 	sudo_warn(U_("unable to change to runas uid (%u, %u)"),
-	    (unsigned int)details->uid, (unsigned int)details->euid);
+	    (unsigned int)details->cred.uid, (unsigned int)details->cred.euid);
 	goto done;
     }
 #else
-    /* Cannot support real user ID that is different from effective user ID. */
-    if (setuid(details->euid) != 0) {
+    /* Cannot support real user-ID that is different from effective user-ID. */
+    if (setuid(details->cred.euid) != 0) {
 	sudo_warn(U_("unable to change to runas uid (%u, %u)"),
-	    (unsigned int)details->euid, (unsigned int)details->euid);
+	    (unsigned int)details->cred.euid, (unsigned int)details->cred.euid);
 	goto done;
     }
 #endif /* !HAVE_SETRESUID && !HAVE_SETREUID */
@@ -239,12 +207,15 @@ exec_setup(struct command_details *details, const char *ptyname, int ptyfd)
      * specifies a different cwd.  Must be done after uid change.
      */
     if (details->cwd != NULL) {
-	if (details->chroot || user_details.cwd == NULL ||
+	if (details->chroot != NULL || user_details.cwd == NULL ||
 	    strcmp(details->cwd, user_details.cwd) != 0) {
 	    /* Note: cwd is relative to the new root, if any. */
-	    if (chdir(details->cwd) != 0) {
+	    if (chdir(details->cwd) == -1) {
 		sudo_warn(U_("unable to change directory to %s"), details->cwd);
-		goto done;
+		if (!details->cwd_optional)
+		    goto done;
+		if (details->chroot != NULL)
+		    sudo_warnx(U_("starting from %s"), "/");
 	    }
 	}
     }
@@ -264,27 +235,11 @@ done:
 void
 exec_cmnd(struct command_details *details, int errfd)
 {
-    debug_decl(exec_cmnd, SUDO_DEBUG_EXEC)
+    debug_decl(exec_cmnd, SUDO_DEBUG_EXEC);
 
     restore_signals();
-    if (exec_setup(details, NULL, -1) == true) {
+    if (exec_setup(details, errfd) == true) {
 	/* headed for execve() */
-	if (details->closefrom >= 0) {
-	    int fd, maxfd;
-	    unsigned char *debug_fds;
-
-	    /* Preserve debug fds and error pipe as needed. */
-	    maxfd = sudo_debug_get_fds(&debug_fds);
-	    for (fd = 0; fd <= maxfd; fd++) {
-		if (sudo_isset(debug_fds, fd))
-		    add_preserved_fd(&details->preserved_fds, fd);
-	    }
-	    if (errfd != -1)
-		add_preserved_fd(&details->preserved_fds, errfd);
-
-	    /* Close all fds except those explicitly preserved. */
-	    closefrom_except(details->closefrom, &details->preserved_fds);
-	}
 #ifdef HAVE_SELINUX
 	if (ISSET(details->flags, CD_RBAC_ENABLED)) {
 	    selinux_execve(details->execfd, details->command, details->argv,
@@ -311,7 +266,7 @@ sudo_terminated(struct command_status *cstat)
 {
     int signo;
     bool sigtstp = false;
-    debug_decl(sudo_terminated, SUDO_DEBUG_EXEC)
+    debug_decl(sudo_terminated, SUDO_DEBUG_EXEC);
 
     for (signo = 0; signo < NSIG; signo++) {
 	if (signal_pending(signo)) {
@@ -354,7 +309,7 @@ sudo_terminated(struct command_status *cstat)
     debug_return_bool(false);
 }
 
-#if SUDO_API_VERSION != SUDO_API_MKVERSION(1, 13)
+#if SUDO_API_VERSION != SUDO_API_MKVERSION(1, 17)
 # error "Update sudo_needs_pty() after changing the plugin API"
 #endif
 static bool
@@ -379,7 +334,31 @@ sudo_needs_pty(struct command_details *details)
 }
 
 /*
- * Execute a command, potentially in a pty with I/O loggging, and
+ * If we are not running the command in a pty, we were not invoked as
+ * sudoedit, there is no command timeout and there is no close function,
+ * sudo can exec the command directly (and not wait).
+ */
+static bool
+direct_exec_allowed(struct command_details *details)
+{
+    struct plugin_container *plugin;
+    debug_decl(direct_exec_allowed, SUDO_DEBUG_EXEC);
+
+    /* Assumes sudo_needs_pty() was already checked. */
+    if (ISSET(details->flags, CD_RBAC_ENABLED|CD_SET_TIMEOUT|CD_SUDOEDIT) ||
+	    policy_plugin.u.policy->close != NULL)
+	debug_return_bool(false);
+
+    TAILQ_FOREACH(plugin, &audit_plugins, entries) {
+	if (plugin->u.audit->close != NULL)
+	    debug_return_bool(false);
+    }
+
+    debug_return_bool(true);
+}
+
+/*
+ * Execute a command, potentially in a pty with I/O logging, and
  * wait for it to finish.
  * This is a little bit tricky due to how POSIX job control works and
  * we fact that we have two different controlling terminals to deal with.
@@ -387,7 +366,7 @@ sudo_needs_pty(struct command_details *details)
 int
 sudo_execute(struct command_details *details, struct command_status *cstat)
 {
-    debug_decl(sudo_execute, SUDO_DEBUG_EXEC)
+    debug_decl(sudo_execute, SUDO_DEBUG_EXEC);
 
     /* If running in background mode, fork and exit. */
     if (ISSET(details->flags, CD_BACKGROUND)) {
@@ -404,9 +383,15 @@ sudo_execute(struct command_details *details, struct command_status *cstat)
 		/* parent exits (but does not flush buffers) */
 		sudo_debug_exit_int(__func__, __FILE__, __LINE__,
 		    sudo_debug_subsys, 0);
-		_exit(0);
+		_exit(EXIT_SUCCESS);
 	}
     }
+
+    /*
+     * Restore resource limits before running.
+     * We must do this *before* calling the PAM session module.
+     */
+    restore_limits();
 
     /*
      * Run the command in a new pty if there is an I/O plugin or the policy
@@ -419,12 +404,10 @@ sudo_execute(struct command_details *details, struct command_status *cstat)
     }
 
     /*
-     * If we are not running the command in a pty, we were not invoked
-     * as sudoedit, there is no command timeout and there is no close
-     * function, just exec directly.  Only returns on error.
+     * If we are not running the command in a pty, we may be able to
+     * exec directly, depending on the plugins used.
      */
-    if (!ISSET(details->flags, CD_SET_TIMEOUT|CD_SUDOEDIT) &&
-	policy_plugin.u.policy->close == NULL) {
+    if (direct_exec_allowed(details)) {
 	if (!sudo_terminated(cstat)) {
 	    exec_cmnd(details, -1);
 	    cstat->type = CMD_ERRNO;
