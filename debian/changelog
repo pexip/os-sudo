@@ -1,3 +1,9 @@
+sudo (1.9.5p2-3pexip1) pexip; urgency=medium
+
+  * Initial bullseye build
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Thu, 02 Jun 2022 14:42:58 +0100
+
 sudo (1.9.5p2-3) unstable; urgency=medium
 
   * new maintainer team and uploaders (Closes: #976244)
