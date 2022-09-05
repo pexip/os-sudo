@@ -1,3 +1,9 @@
+sudo (1.9.5p2-3pexip3) pexip-bullseye; urgency=medium
+
+  * Bullseye rebuild for ARM64 inclusion
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Mon, 05 Sep 2022 10:36:04 +0100
+
 sudo (1.9.5p2-3pexip2) pexip-bullseye; urgency=medium
 
   * Main bullseye build
