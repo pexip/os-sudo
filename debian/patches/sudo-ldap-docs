@@ -1,54 +1,59 @@
 Description: Adapt README.LDAP to the actual state of the sudo-ldap package
 Author: Marc Haber <mh+debian-packages@zugschlus.de>
-
---- a/README.LDAP
-+++ b/README.LDAP
-@@ -35,18 +35,8 @@ They are one and the same.
+Forwarded: not-needed
+--- a/README.LDAP.md
++++ b/README.LDAP.md
+@@ -35,22 +35,8 @@ They are one and the same.
  
- Build instructions
- ==================
+ ## Build instructions
+ 
 -The simplest way to build sudo with LDAP support is to include the
--'--with-ldap' option.
+-`--with-ldap` option.
 -
--  $ ./configure --with-ldap
+-    $ ./configure --with-ldap
 -
 -If your ldap libraries and headers are in a non-standard place, you will need
 -to specify them at configure time.  E.g.
 -
--  $ ./configure --with-ldap=/usr/local/ldapsdk
+-    $ ./configure --with-ldap=/usr/local/ldapsdk
 -
 -Sudo is developed using OpenLDAP but Netscape-based LDAP libraries
--(such as those present in Solaris) are also known to work.
+-(such as those present in Solaris) and IBM LDAP are also known to work.
+-
+-If special configuration was required to build an LDAP-enabled sudo,
+-let the sudo workers mailing list <sudo-workers@sudo.ws> know so
+-we can improve sudo.
 +The Debian package of sudo-ldap is already built with LDAP support
 +using the OpenLDAP libs.
  
- Your mileage may vary.  Please let the sudo workers mailing list
- <sudo-workers@sudo.ws> know if special configuration was required
-@@ -174,13 +164,10 @@ I recommend using any of the following L
+ ## Schema Changes
+ 
+@@ -177,13 +163,10 @@ I recommend using any of the following L
  
    There are dozens of others, some Open Source, some free, some not.
  
--Configure your /etc/ldap.conf and /etc/nsswitch.conf
--====================================================
+-## Configure your /etc/ldap.conf and /etc/nsswitch.conf
++## Configure your /etc/sudo-ldap.conf and /etc/nsswitch.conf
+ 
 -The /etc/ldap.conf file is meant to be shared between sudo, pam_ldap, nss_ldap
 -and other ldap applications and modules.  IBM Secureway unfortunately uses
 -the same file name but has a different syntax.  If you need to change where
--this file is stored, re-run configure with the --with-ldap-conf-file=PATH
+-this file is stored, re-run configure with the `--with-ldap-conf-file=PATH`
 -option.
-+Configure your /etc/sudo-ldap.conf and /etc/nsswitch.conf
-+=========================================================
 +The Debian package sudo-ldap uses /etc/sudo-ldap.conf as configuration file
 +and is configured to use nsswitch.
  
  See the "Configuring ldap.conf" section in the sudoers.ldap manual
  for a list of supported ldap.conf parameters and an example ldap.conf
-@@ -192,9 +179,6 @@ After configuring /etc/ldap.conf, you mu
- to tell sudo to look in LDAP for sudoers.  See the "Configuring nsswitch.conf"
- section in the sudoers.ldap manual for details.  Note that sudo will use
- /etc/nsswitch.conf even if the underlying operating system does not support it.
--To disable nsswitch support, run configure with the --with-nsswitch=no option.
--This will cause sudo to consult LDAP first and /etc/sudoers second, unless the
--ignore_sudoers_file flag is set in the global LDAP options.
+@@ -195,10 +178,7 @@ After configuring /etc/ldap.conf, you mu
+ /etc/nsswitch.conf file to tell sudo to look in LDAP for sudoers.
+ See the "Configuring nsswitch.conf" section in the sudoers.ldap
+ manual for details.  Sudo will use /etc/nsswitch.conf even if the
+-underlying operating system does not support it.  To disable nsswitch
+-support, run configure with the `--with-nsswitch=no` option.  This
+-will cause sudo to consult LDAP first and /etc/sudoers second,
+-unless the ignore_sudoers_file flag is set in the global LDAP options.
++underlying operating system does not support it.
  
- Debugging your LDAP configuration
- =================================
+ ## Debugging your LDAP configuration
+ 

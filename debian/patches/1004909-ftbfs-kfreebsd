@@ -1,0 +1,24 @@
+Description: Fix FTBFS Issue on kFreeBSD
+Author: Laurent Bigonville <bigon@debian.org>
+Bug: https://bugs.debian.org/1004909
+Forwarded: https://bugzilla.sudo.ws/show_bug.cgi?id=1021
+--- a/include/sudo_compat.h
++++ b/include/sudo_compat.h
+@@ -472,7 +472,7 @@ sudo_dso_public time_t sudo_timegm(struc
+ #ifndef HAVE_UTIMENSAT
+ sudo_dso_public int sudo_utimensat(int fd, const char *file, const struct timespec *times, int flag);
+ # undef utimensat
+-# define utimensat(_a, _b, _c, _d) sudo_utimensat((_a), (_b), (_c), (_d))
++# define utimensat(_a, _b, _c, _d) sudo_utimensat(_a, _b, _c, _d)
+ #endif /* HAVE_UTIMENSAT */
+ #ifndef HAVE_FCHMODAT
+ sudo_dso_public int sudo_fchmodat(int dfd, const char *path, mode_t mode, int flag);
+@@ -487,7 +487,7 @@ sudo_dso_public int sudo_fstatat(int dfd
+ #ifndef HAVE_FUTIMENS
+ sudo_dso_public int sudo_futimens(int fd, const struct timespec *times);
+ # undef futimens
+-# define futimens(_a, _b) sudo_futimens((_a), (_b))
++# define futimens(_a, _b) sudo_futimens(_a, _b)
+ #endif /* HAVE_FUTIMENS */
+ #if !defined(HAVE_SNPRINTF) || defined(PREFER_PORTABLE_SNPRINTF)
+ sudo_dso_public int sudo_snprintf(char *str, size_t n, char const *fmt, ...) __printflike(3, 4);

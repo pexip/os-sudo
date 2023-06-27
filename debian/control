@@ -6,15 +6,17 @@ Uploaders: Marc Haber <mh+debian-packages@zugschlus.de>,
   Hanno Wagner <wagner@debian.org>,
   Hilko Bengen <bengen@debian.org>,
   Bastian Blank <waldi@debian.org>
-Build-Depends: debhelper (>= 10), libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], mandoc, zlib1g-dev
-Standards-Version: 4.1.1
+Build-Depends: debhelper-compat (= 13), dh-sequence-installnss, libpam0g-dev, libldap2-dev, libsasl2-dev, libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], zlib1g-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/sudo-team/sudo.git
 Vcs-Browser: https://salsa.debian.org/sudo-team/sudo
 Homepage: https://www.sudo.ws/
 
 Package: sudo
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-modules, lsb-base
+Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-modules
+Pre-Depends: ${misc:Pre-Depends}
 Conflicts: sudo-ldap
 Replaces: sudo-ldap
 Description: Provide limited super user privileges to specific users
@@ -27,11 +29,12 @@ Description: Provide limited super user privileges to specific users
 
 Package: sudo-ldap
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libpam-modules, lsb-base
+Depends: ${shlibs:Depends}, ${misc:Depends}, libnss-sudo, libpam-modules
+Pre-Depends: ${misc:Pre-Depends}
 Conflicts: sudo
 Replaces: sudo
 Provides: sudo
-Description: Provide limited super user privileges to specific users
+Description: Provide limited super user privileges (with LDAP support)
  Sudo is a program designed to allow a sysadmin to give limited root
  privileges to users and log root activity.  The basic philosophy is to give
  as few privileges as possible but still allow people to get their work done.
@@ -39,3 +42,11 @@ Description: Provide limited super user privileges to specific users
  This version is built with LDAP support, which allows an equivalent of the
  sudoers database to be distributed via LDAP.  Authentication is still
  performed via pam.
+
+Package: libnss-sudo
+Architecture: all
+Depends: ${misc:Depends}
+Multi-Arch: foreign
+Description: NSS configuration for sudoers service
+ This empty package provides the basic configuration needed to enable the
+ `sudoers` NSS service.

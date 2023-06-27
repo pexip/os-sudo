@@ -1,3 +1,265 @@
+sudo (1.9.13p3-1+deb12u1) bookworm; urgency=medium
+
+  * add upstream patch to fix event log format.
+    Thanks to Kimmo Suominen (Closes: #1039557)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 27 Jun 2023 13:45:00 +0200
+
+sudo (1.9.13p3-1) unstable; urgency=medium
+
+  * new upstream version:
+    * Fix potential double free for CHROOT= rules
+      CVE-2023-27320. (Closes: #1032163)
+    * Fix --enable-static-sudoers regression
+    * check for overflow as result of fuzzing efforts
+    * Fix parser regression disallowing rules for user "list"
+    * Fix eventloop hang if there is /dev/tty data
+    * Fix sudo -l command args regression
+    * Fix sudo -l -U someuser regression
+    * Fix list privs regression
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 08 Mar 2023 21:17:05 +0100
+
+sudo (1.9.13p1-1) unstable; urgency=medium
+
+  * new upstream version 1.9.13p1
+    * remove unnecessary changelog creation patch
+  * remove lsb-base from dependencies
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sat, 18 Feb 2023 13:03:19 +0100
+
+sudo (1.9.12p2-1) unstable; urgency=high
+
+  * new upstream version 1.9.12p2
+  * this fixes CVE-2023-22809:
+    Sudoedit can edit arbitrary files
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 18 Jan 2023 16:19:23 +0100
+
+sudo (1.9.12p1-1) unstable; urgency=low
+
+  * new upstream version 1.9.12p1
+  * update patches
+  * update debian/copyright
+  * Add upstream patch to silence libgcrypt error message.
+    Thanks to Francesco P. Lovergine (Closes: #1019428)
+  * Standards-Version: 4.6.2 (no changes necessary)
+  * clean out obsolete lintian overrides
+  * Add patch to disable regeneration of upstream ChangeLog from git.
+    Thanks to Gioele Barabucci (Closes: #1025740)
+  * remove extra whitespace from debconf-get-selections output.
+  * add autopkgtest for sudo with sssd (Closes: #1004910)
+
+  [ Niels Thykier ]
+  * Support building sudo without (fake)root.
+
+  [ Gioele Barabucci ]
+  * Use dh_installnss to add ldap to sudoers NSS database
+  * Add libnss-sudo package. (Closes: #1023524)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 15 Jan 2023 13:58:48 +0100
+
+sudo (1.9.11p3-1) unstable; urgency=low
+
+  * new upstream version 1.9.11p3
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 23 Mar 2022 10:50:16 +0100
+
+sudo (1.9.10-3) unstable; urgency=medium
+
+  * some changes to 03-getroot-ldap autopkgtest to find out
+    about ppc64el failure
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 23 Mar 2022 10:38:39 +0100
+
+sudo (1.9.10-2) unstable; urgency=medium
+
+  * upload to unstable (fixed autopkgtest is needed to allow
+    adduser to migrate)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 21 Mar 2022 11:49:06 +0100
+
+sudo (1.9.10-1) experimental; urgency=medium
+
+  * new upstream version
+    * unverified upstream changelog
+    * implement workaround if /proc/self/stat is invalid.
+      (Closes: #940533)
+    * Fix compilation problem on kFreeBSD. (Closes: #1004909)
+      (different fix than the Debian patch, disable Debian patch)
+    * get rid of e-mails "problem with defaults entries" in sss
+      configurations. (Closes: #793660)
+    * regular expression support for sudoers. (Closes: #945366)
+    * handle /proc/self/fd in qemu.
+    * Apply Upstream Patch to allow test suite with non-english LANG
+      https://bugzilla.sudo.ws/show_bug.cgi?id=1025
+    * Apply Upstream Patch to allow test suite with faketime
+  * re-introduce MVPROG patch that got lost in dh migration.
+    Thanks to Vagrant Cascadian (Closes: #976307)
+  * revert back to directly shipping the mask symlink in the package.
+    Thanks to Michael Biebl (Closes: #1004730)
+  * adopt configure changes from Ubuntu
+    --without-lecture --with-tty-tickets --enable-admin-flag (Closes: #1006273)
+  * fix wrong handling of --with-systemd-tmpfiles.d
+  * bring OPTIONS up to date.
+  * have upstream install docs directly to correct directory
+  * let debhelper handle the upstream changelog
+  * remove LICENSE.md in both packages
+  * autopkgtest: send deluser stderr to null in cleanup
+  * Add cron to autopkgtest 03-getroot-ldap dependencies
+  * improve lintian overrides
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 18 Mar 2022 14:31:30 +0100
+
+sudo (1.9.9-1) unstable; urgency=medium
+
+  * new upstream version
+    * audit plugin now handles unresolvable hostname better
+      Thanks to Sven Mueller (Closes: #1003969)
+    * better document environment handling.
+      Thanks to Arnout Engelen (Closes: #659101)
+    * README files now come as markdown
+    * schemas are now in docs subdirectory
+    * LICENSE is now LICENSE.md
+
+  [ Marc Haber ]
+  * refresh patches
+    * mark paths-in-samples.diff expicitly as not forwarded
+  * have systemd-tmpfiles clean up /run/sudo on boot
+  * lintian overrides:
+    * improve 'em in various places
+    * give better explanations
+    * override long line warnings
+    * override typo warning for a literal film quote
+    * use correct lintian tag for override init script without unit
+  * init script / systemd units
+    * guarantee init script no-op on systemd systems
+    * mask sysv init script on systemd systems in postinst
+      instead of debian/rules
+    * actually remove masking of service in postrm
+  * maintainer scripts
+    * document when .dist file removal was added to that
+      it can be eventually removed
+    * document when alternative removal was added to that
+      it can be eventually removed
+  * add a test to check for presence of #1003969
+  * Standards-Version: 4.6.0 (no changes)
+  * use uscan version 4
+  * honor nocheck DEB_BUILD_OPTION
+
+  [ Hilko Bengen ]
+  * More improvement for Lintian overrides
+  * Convert debian/copyright to machine-readable format, using
+    information from upstream-provided LICENSE.md file
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 31 Jan 2022 20:19:55 +0100
+
+sudo (1.9.8p2-1) unstable; urgency=medium
+
+  * add more autopkgtests (especially for LDAP)
+  * improve existing autopkgtests
+  * debian/patches:
+    * Remove typo-in-classic-insults.diff, reflectinc upstream's decision
+      to not fix the typo as a way of remembering Evi Nemeth.
+    * remove unneeded sudo-success_return. patch
+    * mark debian/patches/sudo-ldap-docs as Forwarded: not-needed
+    * add DEP3 headers
+  * mention #1001858 in sudo.prerm
+  * comment some lintian-overrides with unclear results
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sat, 18 Dec 2021 14:55:08 +0100
+
+sudo (1.9.8p2-1~exp1) experimental; urgency=medium
+
+  [ Marc Haber ]
+  * new upstream version 1.9.8p2-1
+    * this correctly handles double defined alases (Closes: #985412)
+    * improve sudoers.ldap.manpage. Thanks to Dennis Filder and
+      Eric Brun (Closes: #981190)
+    * refresh patches
+  * remove prompting for wrong sudo group id (Closes: #605576)
+  * give better docs for LDAP success behavior.
+    Thanks to Dennis Filder (Closes: 981190)
+  * remove unneeded mandoc from Build-Depends.
+    Thanks to Ingo Schwarze
+  * Restore inclusion of pam_limits.so PAM module.
+    Thanks to Salvatore Bonaccorso (Closes: 518464)
+  * Use @includedir in sudoers.d/README (Closes: #993815)
+  * Other improvements for sudoers.d/README.
+    Thanks to Josh Triplett (Closes: #994962)
+  * add some (simple) autopkgtests
+  * better short description for sudo-ldap
+  * use https in debian/watch
+  * some changes to patch headers for Lintian
+  * manually remove executable bit from shared libs
+  * explicitly write set -e in maintainer scripts
+  * debian/control: set Rules-Requires-Root: binary-targets
+  * add first/trivial autopkgtests
+
+  [ Hilko Bengen ]
+  * Update lintian-overrides files
+  * Remove group sudo / gid=27 check from postinst scripts
+
+  [ Otto Kekäläinen ]
+  * Add basic Salsa-CI for project quality assurance
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 12 Dec 2021 22:45:15 +0100
+
+sudo (1.9.6-1~exp2) experimental; urgency=low
+
+  [ Marc Haber ]
+  * add use_pty to default configuration, fixing CVE-2005-4890.
+    Thanks to Daniel Kahn Gillmor (Closes: #657784)
+  * Add group specific defaults for environment variables (commented out)
+    Thanks to Josh Triplett
+  * remove --disable-setresuid from sudo-ldap as well.
+    Thanks to Dennis Filder (Closes: #985307)
+
+  [ Hilko Bengen ]
+  * Add PAM config for interactive login use (Closes: #690044)
+  * Actually configure sudo to use pam / sudo-i
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 02 Apr 2021 18:15:21 +0200
+
+sudo (1.9.6-1~exp1) experimental; urgency=medium
+
+  * new upstream version
+  * add upstream signature
+  * refresh patches
+  * remove NO_ROOT_MAILER patch (incorporated upstream)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 12 Mar 2021 22:06:59 +0100
+
+sudo (1.9.5p2-3+exp1) experimental; urgency=medium
+
+  [ Marc Haber ]
+  * convert package to dh
+    * rename init scripts to be picked up by new debhelper
+    * rename and update lintian overrides
+    * let /run directory be created by systemd
+    * remove documentation files that are installed by upstream scripts
+    * clear dependency path in .la files
+  * add Pre-Depends: ${misc:Pre-Depends}
+  * override package-has-unnecessary-activation-of-ldconfig-trigger
+
+  [ Bastian Blank ]
+  * Move stuff to /usr/libexec.
+  * Use dpkg provided make snippets
+  * Provide build-flags via environment
+  * Use easier to read multi-line variables
+  * Remove not require prefix override
+  * Move stuff to /usr/libexec
+
+  [ Hilko Bengen ]
+  * Remove unneeded Built-Using
+  * Simplify dh_auto_* overrides
+  * Further simplification
+  * debian/rules: Remove another unneeded variable
+  * Don't ship *.la files
+  * Add Apport script
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 12 Mar 2021 20:48:13 +0100
+
 sudo (1.9.5p2-3) unstable; urgency=medium
 
   * new maintainer team and uploaders (Closes: #976244)
