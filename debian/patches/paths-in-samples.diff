@@ -1,6 +1,10 @@
---- a/examples/sudoers
-+++ b/examples/sudoers
-@@ -44,10 +44,10 @@ Host_Alias	CDROM = orion, perseus, hercu
+Description: fix paths in sudoers example to match Debian's
+Last-Update: 2021-12-13
+Author: Bdale Garbee <bdale@gag.com>
+Forwarded: not-needed
+--- a/examples/sudoers.in
++++ b/examples/sudoers.in
+@@ -44,7 +44,7 @@ Host_Alias	CDROM = orion, perseus, hercu
  # Cmnd alias specification
  ##
  Cmnd_Alias	DUMPS = /usr/sbin/dump, /usr/sbin/rdump, /usr/sbin/restore, \
@@ -8,11 +12,7 @@
 +			/usr/sbin/rrestore, /bin/mt, \
  			sha224:0GomF8mNN3wlDt1HD9XldjJ3SNgpFdbjO1+NsQ== \
  			/home/operator/bin/start_backups
--Cmnd_Alias	KILL = /usr/bin/kill, /usr/bin/top
-+Cmnd_Alias	KILL = /bin/kill, /usr/bin/top
- Cmnd_Alias	PRINTING = /usr/sbin/lpc, /usr/bin/lprm
- Cmnd_Alias	SHUTDOWN = /usr/sbin/shutdown
- Cmnd_Alias	HALT = /usr/sbin/halt
+ Cmnd_Alias	KILL = /usr/bin/kill, /usr/bin/top
 @@ -85,7 +85,7 @@ operator	ALL = DUMPS, KILL, SHUTDOWN, HA
  		sudoedit /etc/printcap, /usr/oper/bin/
  
@@ -21,7 +21,7 @@
 +joe		ALL = /bin/su operator
  
  # pete may change passwords for anyone but root on the hp snakes
- pete		HPPA = /usr/bin/passwd [A-Za-z]*, !/usr/bin/passwd *root*
+ pete		HPPA = /usr/bin/passwd ^[a-zA-Z0-9_]+$, !/usr/bin/passwd root
 @@ -99,13 +99,13 @@ jim		+biglab = ALL
  
  # users in the secretaries netgroup need to help manage the printers
@@ -32,9 +32,9 @@
  # fred can run commands as oracle or sybase without a password
  fred		ALL = (DB) NOPASSWD: ALL
  
- # on the alphas, john may su to anyone but root and flags are not allowed
--john		ALPHA = /usr/bin/su [!-]*, !/usr/bin/su *root*
-+john		ALPHA = /bin/su [!-]*, !/bin/su *root*
+ # on the alphas, john may su to anyone except root, no flags are allowed.
+-john		ALPHA = /usr/bin/su ^[a-zA-Z0-9_]+$, !/usr/bin/su root
++john		ALPHA = /bin/su ^[a-zA-Z0-9_]+$, !/bin/su root
  
  # jen can run anything on all machines except the ones
  # in the "SERVERS" Host_Alias

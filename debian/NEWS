@@ -1,3 +1,12 @@
+sudo (1.9.5p2-3) unstable; urgency=medium
+
+  We have added "Defaults use_pty" to the default configuration. This fixes
+  CVE-2005-4890 which has been lingering around for more then a decade.
+  If you would like the old behavior back, please remove the respective line
+  from /etc/sudoers.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 24 Feb 2021 17:59:22 +0100
+
 sudo (1.8.2-1) unstable; urgency=low
 
   The sudo package is no longer configured using --with-secure-path.

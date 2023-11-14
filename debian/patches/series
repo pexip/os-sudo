@@ -1,6 +1,8 @@
-typo-in-classic-insults.diff
+# 1004909-ftbfs-kfreebsd
+# debian-bugs-1019428
+# dont-create-ChangeLog
+debian-bug-1039557
 paths-in-samples.diff
 Whitelist-DPKG_COLORS-environment-variable.diff
-fix-no-root-mailer.diff
 sudo-ldap-docs
 CVE-2023-22809.patch
