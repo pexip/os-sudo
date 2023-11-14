@@ -5,4 +5,3 @@ debian-bug-1039557
 paths-in-samples.diff
 Whitelist-DPKG_COLORS-environment-variable.diff
 sudo-ldap-docs
-CVE-2023-22809.patch
