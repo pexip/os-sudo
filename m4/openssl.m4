@@ -44,7 +44,9 @@ AC_DEFUN([SUDO_CHECK_OPENSSL], [
 			SUDO_APPEND_LIBPATH([LIBTLS], [$f])
 			;;
 		    *)
-			AX_APPEND_FLAG([$f], [LIBTLS])
+			# Do not use AX_APPEND_FLAG as it will break static builds by removing
+			# duplicates such as -lz or -latomic which are needed by -lssl and -lcrypto
+		        LIBTLS="$LIBTLS $f"
 			;;
 		esac
 	    done
@@ -160,6 +162,9 @@ AC_DEFUN([SUDO_CHECK_OPENSSL], [
 	    AC_INCLUDES_DEFAULT
 	    #include <openssl/ssl.h>
 	])
+	AC_CHECK_FUNCS([SSL_read_ex], [], [
+	    SSL_COMPAT_SRC=lib/ssl_compat
+	])
 	# LibreSSL TLS 1.3 support may not be enabled, check for declaration too.
 	AC_CHECK_FUNC([SSL_CTX_set_ciphersuites], [
 	    AC_CHECK_DECL([SSL_CTX_set_ciphersuites], [AC_DEFINE(HAVE_SSL_CTX_SET_CIPHERSUITES)], [], [
@@ -223,7 +228,7 @@ AC_DEFUN([SUDO_CHECK_OPENSSL], [
 		# So we find the openssl compat headers under wolfssl
 		AX_APPEND_FLAG([$f/wolfssl], [CPPFLAGS])
 	    done
-	    if test "$CPPFLAGS" = "$O_CPPFLAGS"; then
+	    if test "$cross_compiling" != "yes" -a "$CPPFLAGS" = "$O_CPPFLAGS"; then
 		# So we find the openssl compat headers under wolfssl (XXX)
 		AX_APPEND_FLAG([-I/usr/include/wolfssl], [CPPFLAGS])
 	    fi
@@ -290,5 +295,15 @@ AC_DEFUN([SUDO_CHECK_OPENSSL], [
 	    #include <wolfssl/options.h>
 	    #include <wolfssl/openssl/ssl.h>
 	])
+	AC_CHECK_DECL([SSL_read_ex], [AC_DEFINE(HAVE_SSL_READ_EX)], [
+	    SSL_COMPAT_SRC=lib/ssl_compat
+	], [
+	    AC_INCLUDES_DEFAULT
+	    #include <wolfssl/options.h>
+	    #include <wolfssl/openssl/ssl.h>
+	])
+    fi
+    if test -n "$SSL_COMPAT_SRC"; then
+	LIBTLS='$(top_builddir)/lib/ssl_compat/libssl_compat.la '"${LIBTLS}"
     fi
 ])

@@ -1,3 +1,32 @@
+sudo (1.9.15p2-1) unstable; urgency=medium
+
+  sudo-ldap has become a burden to maintain. This is mainly due to the fact
+  that the sudo team has neither the manpower nor the know-how to maintain
+  sudo-ldap adequately.
+
+  In practice, there are few installations that use sudo-ldap. Most
+  installations that use LDAP as a directory service and sudo have now opted
+  for sssd, sssd-ldap and libsss-sudo.
+
+  The Debian sudo team recommends the use of libsss-sudo for new
+  installations and the migration of existing installations from sudo-ldap
+   to libsss-sudo and sssd.
+
+  The combination of sudo and sssd is automatically tested in autopkgtest
+  of sudo.
+
+  This is also being discussed in #1033728 in the Debian BTS.
+
+  Debian 13, "trixie", will be the last version of Debian that supports
+  sudo-ldap. Please use the bookworm and trixie release cycles to migrate
+  your installation away from sudo-ldap.
+
+  Please make sure that you do not upgrade from Debian 13 to Debian 14
+  while you're still using sudo-ldap. This is not going to work and
+  will probably leave you without intended privilege escalation.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 20 Nov 2023 10:07:57 +0100
+
 sudo (1.9.5p2-3) unstable; urgency=medium
 
   We have added "Defaults use_pty" to the default configuration. This fixes

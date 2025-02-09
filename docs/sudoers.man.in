@@ -1,8 +1,8 @@
-.\" Automatically generated from an mdoc input file.  Do not edit.
+.\" Automatically generated from the sudoers.mdoc.in file.  Do not edit.
 .\"
 .\" SPDX-License-Identifier: ISC
 .\"
-.\" Copyright (c) 1994-1996, 1998-2005, 2007-2023
+.\" Copyright (c) 1994-1996, 1998-2005, 2007-2024
 .\"	Todd C. Miller <Todd.Miller@sudo.ws>
 .\"
 .\" Permission to use, copy, modify, and distribute this software for any
@@ -25,7 +25,7 @@
 .nr BA @BAMAN@
 .nr LC @LCMAN@
 .nr PS @PSMAN@
-.TH "SUDOERS" "@mansectform@" "January 16, 2023" "Sudo @PACKAGE_VERSION@" "File Formats Manual"
+.TH "SUDOERS" "@mansectform@" "November 11, 2024" "Sudo @PACKAGE_VERSION@" "File Formats Manual"
 .nh
 .if n .ad l
 .SH "NAME"
@@ -129,6 +129,18 @@ A value of
 \fIfalse\fR
 will disable error recovery.
 Prior to version 1.9.3, no error recovery was performed.
+.TP 6n
+ignore_perms=bool
+The
+\fIignore_perms\fR
+argument can be used to disable security checks when loading the
+\fIsudoers\fR
+file.
+If enabled, the
+\fIsudoers\fR
+file will be loaded regardless of the owner or file mode.
+This argument is intended to be used for testing purposes and
+should not be enabled on production systems.
 .TP 6n
 ldap_conf=pathname
 The
@@ -280,6 +292,14 @@ The
 option can be used to select the type of time stamp record
 \fBsudoers\fR
 will use.
+.PP
+The
+\fBtsdump\fR
+utility, included with the sudo source distribution, can be used to
+display the contents of a time stamp file.
+See
+sudoers_timestamp(@mansectform@)
+for details of the time stamp file format.
 .SS "Logging"
 By default,
 \fBsudoers\fR
@@ -475,14 +495,34 @@ varies based on the operating system
 \fBsudo\fR
 is running on.
 .PP
-Other
+Other settings may influence the command environment:
+.TP 3n
+\fB\(bu\fR
 \fBsudoers\fR
-options may influence the command environment, such as
+options such as
 \fIalways_set_home\fR,
 \fIsecure_path\fR,
 \fIset_logname\fR,
+\fIset_home\fR,
 and
-\fIset_home\fR.
+\fIsetenv\fR.
+.TP 3n
+\fB\(bu\fR
+Command tags, such as
+\fRSETENV\fR
+and
+\fRNOSETENV\fR.
+Note that
+\fRSETENV\fR
+is implied if the command matched is
+\fBALL\fR.
+.TP 3n
+\fB\(bu\fR
+\fBsudo\fR
+options, such as
+\fB\-E\fR
+and
+\fB\-i\fR.
 .PP
 On systems that support PAM where the
 \fBpam_env\fR
@@ -1219,21 +1259,45 @@ Certain configuration options may be changed from their default
 values at run-time via one or more
 \fIDefault_Entry\fR
 lines.
-These may affect all users on any host, all users on a specific host, a
-specific user, a specific command, or commands being run as a specific user.
+These may affect all users on any host
+(\(oqDefaults\(cq),
+all users on a specific host
+(\(oqDefaults@host\(cq),
+a specific user
+(\(oqDefaults:user\(cq),
+a specific command
+(\(oqDefaults!cmnd\(cq),
+or commands being run as a specific user
+(\(oqDefaults>runasuser\(cq).
+.PP
+White space is not permitted between
+\(oqDefaults\(cq
+and the
+\(oq@\(cq,
+\(oq\&:\(cq,
+\(oq\&!\(cq,
+or
+\(oq>\(cq
+characters.
+While a comma-separated list may be used in place of a single value after the
+\(oq@\(cq,
+\(oq\&:\(cq,
+\(oq\&!\(cq,
+or
+\(oq>\(cq
+character, using an alias instead of a list is often improve readability.
 Per-command entries may not include command line arguments.
 If you need to specify arguments, define a
 \fICmnd_Alias\fR
-and reference
-that instead.
+and reference that instead.
 .nf
 .sp
 .RS 0n
 Default_Type ::= 'Defaults' |
-                 'Defaults' '@' Host_List |
-                 'Defaults' ':' User_List |
-                 'Defaults' '!' Cmnd_List |
-                 'Defaults' '>' Runas_List
+                 'Defaults@' Host_List |
+                 'Defaults:' User_List |
+                 'Defaults!' Cmnd_List |
+                 'Defaults>' Runas_List
 
 Default_Entry ::= Default_Type Parameter_List
 
@@ -1379,7 +1443,7 @@ A fully-specified
 consists of two
 \fIRunas_List\fRs
 (as defined above) separated by a colon
-(\(oq:\&\(cq)
+(\(oq\&:\(cq)
 and enclosed in a set of parentheses.
 The first
 \fIRunas_List\fR
@@ -1873,7 +1937,7 @@ may run
 \fI/usr/bin/more\fR
 and
 \fI/usr/bin/vi\fR
-but shell escapes will be disabled.
+on the host shanty, but shell escapes will be disabled.
 .nf
 .sp
 .RS 2n
@@ -2427,6 +2491,11 @@ will cause
 \fBsudo\fR
 to include the file
 \fI/etc/sudoers.xerxes\fR.
+Any path name separator characters
+(\(oq/\(cq)
+present in the host name will be replaced with an underbar
+(\(oq_\(cq)
+during expansion.
 .PP
 The
 \fI@includedir\fR
@@ -3278,6 +3347,9 @@ The
 flag uses the same underlying mechanism as the
 \fIintercept\fR
 setting.
+Some commands may not work properly when
+\fIlog_subcmds\fR
+is enabled, due to the way it intercepts sub-commands.
 See
 \fIPreventing shell escapes\fR
 for more information on what systems support this option and its limitations.
@@ -3483,6 +3555,9 @@ will behave as if the
 tag has been set, unless overridden by an
 \fRNOINTERCEPT\fR
 tag.
+Some commands may not work properly when
+\fIintercept\fR
+is enabled, due to the way it intercept sub-commands.
 See the description of
 \fRINTERCEPT and NOINTERCEPT\fR
 above as well as the
@@ -3579,6 +3654,14 @@ tag has been set for the command and the
 \fIintercept_type\fR
 option is set to
 \fItrace\fR.
+.sp
+This setting is incompatible with programs that change their root directory via
+chroot(2).
+If a program changes its root directory, path names will no longer match
+those seen by the
+\fBsudo\fR
+parent process and sub-commands will be terminated before they have a chance
+to run.
 This flag is
 \fIon\fR
 by default.
@@ -3740,6 +3823,22 @@ This flag is
 by default.
 .sp
 This setting is only supported by version 1.8.8 or higher.
+.TP 18n
+pam_silent
+If set, PAM authentication will be performed in silent mode.
+This prevents PAM authentication modules from generating output.
+In some cases, this may suppress important information about why
+authentication failed.
+For example, PAM modules such as
+\fIpam_faillock\fR
+will only display a warning if
+\fIpam_silent\fR
+is disabled.
+This flag is
+\fIon\fR
+by default.
+.sp
+This setting is only supported by version 1.9.16 or higher.
 .TP 18n
 passprompt_override
 If set, the prompt specified by
@@ -4190,8 +4289,7 @@ by default.
 use_pty
 If set, and
 \fBsudo\fR
-is running in a terminal, the command will be run in a pseudo-terminal
-(even if no I/O logging is being done).
+is running in a terminal, the command will be run in a new pseudo-terminal.
 If the
 \fBsudo\fR
 process is not attached to a terminal,
@@ -4206,9 +4304,19 @@ user's terminal device even after the main program has finished
 executing.
 By running the command in a separate pseudo-terminal, this attack is
 no longer possible.
+.sp
+A side effect of running the command in a new pseudo-terminal is
+that input will be passed to the command even if it is non-interactive.
+This means that, for example, keys pressed while a non-interactive
+command is running will be consumed by
+\fBsudo\fR
+instead of being passed to the shell after the command exits.
+.sp
 This flag is
-\fIoff\fR
-by default.
+\fIon\fR
+by default for
+\fBsudo\fR
+1.9.14 and above.
 .TP 18n
 user_command_timeouts
 If set, the user may specify a timeout on the command line.
@@ -4312,7 +4420,7 @@ it will
 \(lqroll over\(rq
 to zero, after which
 \fBsudoers\fR
-will truncate and re-use any existing I/O log path names.
+will truncate and reuse any existing I/O log path names.
 .sp
 This setting is only supported by version 1.8.7 or higher.
 .TP 18n
@@ -4422,6 +4530,19 @@ entries by specifying the
 option.
 This option is only available when sudo is built with AppArmor
 support.
+.TP 18n
+cmddenial_message
+.br
+It set,
+\fBsudo\fR
+will display this message when a user is denied access to run the
+specified command, but is listed in the
+\fIsudoers\fR
+file for the host.
+This can be used to provide additional, site-specific information
+to the user when a command is denied by the security policy.
+It does not override the standard warning the user receives when
+a command is denied.
 .TP 18n
 authfail_message
 Message that is displayed after a user fails to authenticate.
@@ -4597,6 +4718,12 @@ To include a literal
 character, the string
 \(oq%%\(cq
 should be used.
+.sp
+Any path name separator characters
+(\(oq/\(cq)
+present in the user, group or host name will be replaced with an underbar
+(\(oq_\(cq)
+during expansion.
 .RE
 .TP 18n
 iolog_file
@@ -5165,6 +5292,13 @@ before the file extension;
 becomes
 \fIgroup_plugin64.so\fR.
 .sp
+On AIX systems, the plugin may be either a shared object
+ending in
+\(oq.so\(cq
+or an archive file containing a shared object ending in
+\(oq.a\(cq
+with the name of the shared object in parentheses at the end.
+.sp
 For more information see
 \fIGROUP PROVIDER PLUGINS\fR.
 .TP 14n
@@ -5263,18 +5397,45 @@ Supported log formats are:
 .PD 0
 .TP 6n
 json
-Logs in JSON format.
+Currently, this is an alias for
+\fIjson_pretty\fR.
+In a future version of
+\fBsudo\fR,
+\fIjson\fR
+will be equivalent to
+\fIjson_compact\fR.
 JSON log entries contain the full user details as well as the execution
 environment if the command was allowed.
+.PD
+.TP 6n
+json_compact
+Log events in
+\(lqcompact\(rq
+(minified) JSON format.
+Each event is written as a separate JSON object on single line without
+extraneous white space.
 Due to limitations of the protocol, JSON events sent via
 \fIsyslog\fR
 may be truncated.
-.PD
+.TP 6n
+json_pretty
+Log events in
+\(lqpretty\(rq
+JSON format.
+When logging to a file, the entire file is treated as a single JSON
+object consisting of multiple events, each event spanning multiple lines.
+When logging via
+\fIsyslog\fR,
+there is no difference between the
+\fIjson_pretty\fR
+and
+\fIjson_compact\fR
+formats.
 .TP 6n
 sudo
-Traditional sudo-style logs, see
+Log events in traditional sudo-style format, see
 \fIEVENT LOGGING\fR
-for a description of the log file format.
+for details.
 .PP
 This setting affects logs sent via
 syslog(3)
@@ -5409,11 +5570,16 @@ The
 \fIrestricted_env_file\fR
 option specifies the fully qualified path to a file containing variables
 to be set in the environment of the program being run.
-Entries in this file should either be of the form
+Entries in this file should be assignments in the form
 \(oqVARIABLE=value\(cq
 or
-\(oqexport VARIABLE=value\(cq.
+\(oqexport VARIABLE=value\(cq,
+separated by newline characters.
 The value may optionally be enclosed in single or double quotes.
+Shell-style variable substitution is not supported.
+Empty lines and comments starting with a pound sign
+(\(oq#\(cq)
+are ignored.
 Variables in this file are only added if the variable does not already
 exist in the environment.
 Unlike
@@ -5487,17 +5653,37 @@ If set,
 will use this value in place of the user's
 \fRPATH\fR
 environment variable.
-This option can be used to reset the
-\fRPATH\fR
-to a known good value that contains directories for system administrator
-commands such as
+There are two basic use cases for
+\fIsecure_path\fR:
+.PP
+.RS 14n
+.PD 0
+.TP 3n
+1.\&
+To make it possible for
+\fBsudo\fR
+to find system administrator commands located in directories that
+may not be in the default user path, such as
 \fI/usr/sbin\fR.
-.sp
+.PD
+.TP 3n
+2.\&
+To help protect scripts and programs that execute other commands without
+first setting
+\fRPATH\fR
+to a safe value.
+Otherwise, a user with limited privileges may be able to run arbitrary
+commands by manipulating the
+\fRPATH\fR
+if the command being run executes other commands without using a
+fully-qualified path name.
+.PP
 Users in the group specified by the
 \fIexempt_group\fR
 option are not affected by
 \fIsecure_path\fR.
-This option is @secure_path@ by default.
+This option is @secure_path_status@ by default.
+.RE
 .TP 14n
 syslog
 Syslog facility if syslog is being used for logging (negate to
@@ -6142,7 +6328,7 @@ line in the
 sudo.conf(@mansectform@)
 file.
 .TP 3n
-unable to open @rundir@/ts/username
+unable to open @rundir@/ts/user-ID
 \fBsudoers\fR
 was unable to read or create the user's time stamp file.
 This can happen when
@@ -6156,7 +6342,7 @@ The default mode for
 \fI@rundir@\fR
 is 0711.
 .TP 3n
-unable to write to @rundir@/ts/username
+unable to write to @rundir@/ts/user-ID
 \fBsudoers\fR
 was unable to write to the user's time stamp file.
 .TP 3n
@@ -6668,7 +6854,7 @@ Once the I/O log sequence number reaches
 \fImaxseq\fR,
 it will be reset to zero and
 \fBsudoers\fR
-will truncate and re-use any existing I/O logs.
+will truncate and reuse any existing I/O logs.
 .SH "FILES"
 .TP 26n
 \fI@sysconfdir@/sudo.conf\fR
@@ -7325,6 +7511,9 @@ run a new command, allow or deny it based on
 rules, and log the result.
 For example, this can be used to restrict the commands run from
 within a privileged shell or editor.
+However, not all programs operate correctly when
+\fIintercept\fR
+is enabled.
 .sp
 There are two underlying mechanisms that may be used to implement
 \fIintercept\fR
@@ -7398,6 +7587,21 @@ execveat(2)
 system call, such as
 fexecve(3),
 are not currently intercepted.
+Programs that rely on
+ptrace(2)
+themselves, such as debuggers and system call tracers
+(such as
+strace(1)
+and
+truss(1))
+will be unable to function if
+\fIintercept\fR
+is enabled in
+\fItrace\fR
+mode.
+This same restriction applies to the
+\fIlog_subcmds\fR
+sudoers option.
 .sp
 The
 \fIintercept\fR
@@ -7727,7 +7931,7 @@ If no terminal is present or the
 option is set to
 \(lqppid\(rq,
 the start time of the parent process is used instead.
-In most cases this will prevent a time stamp record from being re-used
+In most cases this will prevent a time stamp record from being reused
 without the user entering a password when logging out and back in again.
 .SH "DEBUGGING"
 Versions 1.8.4 and higher of the
@@ -7851,10 +8055,12 @@ glob(3),
 mktemp(3),
 strftime(3),
 sudo.conf(@mansectform@),
+sudo_logsrv.proto(@mansectform@),
 sudo_plugin(@mansectform@),
 sudoers.ldap(@mansectform@),
 sudoers_timestamp(@mansectform@),
 sudo(@mansectsu@),
+sudo_logsrvd(@mansectsu@),
 visudo(@mansectsu@)
 .SH "AUTHORS"
 Many people have worked on
@@ -7906,8 +8112,20 @@ option in
 \fIsudoers\fR.
 .SH "BUGS"
 If you believe you have found a bug in
-\fBsudo\fR,
-you can submit a bug report at https://bugzilla.sudo.ws/
+\fBsudoers\fR,
+you can either file a bug report in the sudo bug database,
+https://bugzilla.sudo.ws/, or open an issue at
+https://github.com/sudo-project/sudo/issues.
+If you would prefer to use email, messages may be sent to the
+sudo-workers mailing list,
+https://www.sudo.ws/mailman/listinfo/sudo-workers (public)
+or <sudo@sudo.ws> (private).
+.PP
+Please not report security vulnerabilities through public GitHub
+issues, Bugzilla or mailing lists.
+Instead, report them via email to <Todd.Miller@sudo.ws>.
+You may encrypt your message with PGP if you would like, using
+the key found at https://www.sudo.ws/dist/PGPKEYS.
 .SH "SUPPORT"
 Limited free support is available via the sudo-users mailing list,
 see https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or

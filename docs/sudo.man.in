@@ -1,4 +1,4 @@
-.\" Automatically generated from an mdoc input file.  Do not edit.
+.\" Automatically generated from the sudo.mdoc.in file.  Do not edit.
 .\"
 .\" SPDX-License-Identifier: ISC
 .\"
@@ -25,7 +25,7 @@
 .nr BA @BAMAN@
 .nr LC @LCMAN@
 .nr PS @PSMAN@
-.TH "SUDO" "@mansectsu@" "January 16, 2023" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
+.TH "SUDO" "@mansectsu@" "August 9, 2023" "Sudo @PACKAGE_VERSION@" "System Manager's Manual"
 .nh
 .if n .ad l
 .SH "NAME"
@@ -582,11 +582,21 @@ and the security policy supports a verbose output format.
 .sp
 If a
 \fIcommand\fR
-is specified and is permitted by the security policy, the fully-qualified
-path to the
+is specified and is permitted by the security policy for the invoking
+user (or the,
+\fIuser\fR
+specified by the
+\fB\-U\fR
+option) on the current host,
+the fully-qualified path to the
 \fIcommand\fR
 is displayed along with any
 \fIarg\fRs.
+If
+\fB\-l\fR
+is specified more than once (and the security policy supports it),
+the matching rule is displayed in a verbose format along with the
+\fIcommand\fR.
 If a
 \fIcommand\fR
 is specified but not allowed by the policy,
@@ -601,9 +611,12 @@ Unlike the
 flag, existing cached credentials are used if they are valid.
 To detect when the user's cached credentials are valid (or when no
 authentication is required), the following can be used:
-.RS 14n
+.nf
+.sp
+.RS 12n
 sudo -Nnv
 .RE
+.fi
 .RS 8n
 .sp
 Not all security policies support credential caching.
@@ -990,6 +1003,8 @@ process passes the
 \fIcommand\fR's
 exit status to the security policy's close function, as well as the
 close function of any configured audit plugin, and exits.
+This mode is the default for sudo versions 1.9.14 and above when using
+the sudoers policy.
 .PP
 If no pty is used,
 \fBsudo\fR
@@ -1031,6 +1046,8 @@ Both
 and
 \fIpam_setcred\fR
 are enabled by default on systems using PAM.
+This mode is the default for sudo versions prior to 1.9.14 when using
+the sudoers policy.
 .PP
 On systems that use PAM, the security policy's close function
 is responsible for closing the PAM session.
@@ -1398,6 +1415,9 @@ Default editor to use in
 \fRSUDO_GID\fR
 Set to the group-ID of the user who invoked sudo.
 .TP 17n
+\fRSUDO_HOME\fR
+Set to the home directory of the user who invoked sudo.
+.TP 17n
 \fRSUDO_PROMPT\fR
 Used as the default password prompt unless the
 \fB\-p\fR
@@ -1705,7 +1725,19 @@ set-user-ID shell scripts are generally safe).
 .SH "BUGS"
 If you believe you have found a bug in
 \fBsudo\fR,
-you can submit a bug report at https://bugzilla.sudo.ws/
+you can either file a bug report in the sudo bug database,
+https://bugzilla.sudo.ws/, or open an issue at
+https://github.com/sudo-project/sudo/issues.
+If you would prefer to use email, messages may be sent to the
+sudo-workers mailing list,
+https://www.sudo.ws/mailman/listinfo/sudo-workers (public)
+or <sudo@sudo.ws> (private).
+.PP
+Please not report security vulnerabilities through public GitHub
+issues, Bugzilla or mailing lists.
+Instead, report them via email to <Todd.Miller@sudo.ws>.
+You may encrypt your message with PGP if you would like, using
+the key found at https://www.sudo.ws/dist/PGPKEYS.
 .SH "SUPPORT"
 Limited free support is available via the sudo-users mailing list,
 see https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or

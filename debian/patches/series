@@ -1,7 +1,5 @@
-# 1004909-ftbfs-kfreebsd
-# debian-bugs-1019428
-# dont-create-ChangeLog
-debian-bug-1039557
+spanish.patch
 paths-in-samples.diff
 Whitelist-DPKG_COLORS-environment-variable.diff
-sudo-ldap-docs
+sudo-ldap-docs.patch
+X11R6.patch

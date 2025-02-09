@@ -3,14 +3,14 @@
 	summary="Sudo Python plugin framework"
 	description="The sudo Python plugin allows you to extend sudo using Python."
 	vendor="Todd C. Miller"
-	copyright="(c) 2019-2021 Todd C. Miller"
+	copyright="Copyright 2019-2024 Todd C. Miller"
 
 %if [aix]
 	# Convert to 4 part version for AIX, including patch level
 	pp_aix_version=`echo $version|sed -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)p\([0-9]*\)$/\1.\2/' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)[^0-9\.].*$/\1/' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)$/\1.0/'`
 
-	# Don't allow sudo to prompt for a password
-	pp_aix_sudo="sudo -n"
+	# Don't use sudo to list the package.
+	pp_aix_sudo=
 %endif
 
 %if [sd]
