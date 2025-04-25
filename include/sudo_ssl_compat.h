@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: ISC
  *
- * Copyright (c) 2020 Todd C. Miller <Todd.Miller@sudo.ws>
+ * Copyright (c) 2023 Todd C. Miller <Todd.Miller@sudo.ws>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,35 +16,31 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#ifndef IOLOG_JSON_H
-#define IOLOG_JSON_H
+#ifndef SUDO_SSL_COMPAT_H
+#define SUDO_SSL_COMPAT_H
 
-#include "sudo_json.h"
-#include "sudo_queue.h"
+# ifdef HAVE_OPENSSL
 
-TAILQ_HEAD(json_item_list, json_item);
+/*
+ * Compatibility defines for OpenSSL 1.0.2 (not needed for 1.1.x)
+ */
+#  ifndef HAVE_WOLFSSL
+#   ifndef HAVE_X509_STORE_CTX_GET0_CERT
+#    define X509_STORE_CTX_get0_cert(x)   ((x)->cert)
+#   endif
+#   ifndef HAVE_TLS_METHOD
+#    define TLS_method()                  SSLv23_method()
+#   endif
+#  endif /* !HAVE_WOLFSSL */
 
-struct json_object {
-    struct json_item *parent;
-    struct json_item_list items;
-};
+/*
+ * SSL_read_ex() and SSL_write_ex() were added in OpenSSL 1.1.1.
+ */
+#  ifndef HAVE_SSL_READ_EX
+int SSL_read_ex(SSL *, void *, size_t, size_t *);
+int SSL_write_ex(SSL *, const void *, size_t, size_t *);
+#  endif /* HAVE_SSL_READ_EX */
 
-struct json_item {
-    TAILQ_ENTRY(json_item) entries;
-    char *name;		/* may be NULL for first brace */
-    unsigned int lineno;
-    enum json_value_type type;
-    union {
-	struct json_object child;
-	char *string;
-	long long number;
-	id_t id;
-	bool boolean;
-    } u;
-};
+# endif /* HAVE_OPENSSL */
 
-void free_json_items(struct json_item_list *items);
-bool iolog_parse_json(FILE *fp, const char *filename, struct json_object *root);
-char **json_array_to_strvec(struct json_object *array);
-
-#endif /* IOLOG_JSON_H */
+#endif /* SUDO_SSL_COMPAT_H */

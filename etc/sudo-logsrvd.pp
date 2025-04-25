@@ -5,14 +5,14 @@
 from sudo clients.
 This makes it possible to have all sudo I/O logs on a central server."
 	vendor="Todd C. Miller"
-	copyright="(c) 2019-2021 Todd C. Miller"
+	copyright="Copyright 2019-2024 Todd C. Miller"
 
 %if [aix]
 	# Convert to 4 part version for AIX, including patch level
 	pp_aix_version=`echo $version|sed -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)p\([0-9]*\)$/\1.\2/' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)[^0-9\.].*$/\1/' -e 's/^\([0-9]*\.[0-9]*\.[0-9]*\)$/\1.0/'`
 
-	# Don't allow sudo to prompt for a password
-	pp_aix_sudo="sudo -n"
+	# Don't use sudo to list the package.
+	pp_aix_sudo=
 %endif
 
 %if [sd]
@@ -261,7 +261,7 @@ This makes it possible to have all sudo I/O logs on a central server."
 	    pp_systemd_service_exec_args="-n"
 	    pp_systemd_service_man="man:sudo_logsrvd(8) man:sudo_logsrvd.conf(5)"
 	    pp_systemd_service_documentation="https://www.sudo.ws/man.html"
-	    pp_systemd_service_after="syslog.target network.target auditd.service"
+	    pp_systemd_service_after="network.target auditd.service"
 	    pp_systemd_service_killmode="process"
 	    pp_systemd_service_type="exec"
 	    pp_systemd_system_target="multi-user.target"
