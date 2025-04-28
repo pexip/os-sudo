@@ -1,3 +1,135 @@
+sudo (1.9.16p2-1) unstable; urgency=medium
+
+  * New upstream version 1.9.16p2
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 09 Feb 2025 20:13:12 +0100
+
+sudo (1.9.16p1-1) unstable; urgency=medium
+
+  * New upstream version 1.9.16p1
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 13 Nov 2024 18:08:56 +0100
+
+sudo (1.9.16-2) unstable; urgency=medium
+
+  * Upload to unstable
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 23 Sep 2024 08:14:18 +0200
+
+sudo (1.9.16-1) experimental; urgency=medium
+
+  * New upstream version 1.9.16
+  * update debian/copyright
+  * Streamline po-debconf translations headers
+  * Add debconf translations for Simplified and Traditional Chinese.
+    Thanks to Yangfl
+  * Update Brazilian Portuguese debconf translation.
+    Thanks to Adriano Rafael Gomes (Closes: #1068109)
+  * add patch to fix docs to correctly point to ssh-askpass
+  * remove obsolete lintian tag from overrides
+  * Standards-Version: 4.7.0 (no changes necessary)
+  * fix proper file suffixes for patches
+  * disable libapparmor-dev build dependency for non-linux arches.
+    Thanks to Sambuel Thibault (Closes: #1079659)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 22 Sep 2024 21:19:01 +0200
+
+sudo (1.9.15p5-3) unstable; urgency=medium
+
+  * add --with-devel configure option.
+    Thanks to Bastien Roucariès (Closes: #1061272)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 26 Jan 2024 21:10:13 +0100
+
+sudo (1.9.15p5-2) unstable; urgency=medium
+
+  * switch Build-Depends from systemd to systemd-dev
+    Thanks to Michael Biebl (Closes: #1060511)
+  * set Multi-Arch: foreign on sudo and sudo-ldap.
+    Thanks to Andreas Rottmann (Closes: #1060445)
+  * add debian/copyright clause for source_sudo.py.
+    Oops.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sat, 13 Jan 2024 21:59:56 +0100
+
+sudo (1.9.15p5-1) unstable; urgency=medium
+
+  * new upstream version 1.9.15p5
+    * This is supposed to properly malloc on hurd.
+      Thanks to Martin-Éric Racine (Closes: #1057833)
+  * add durch debconf translation.
+    Thanks to Frans Spiesschaert (Closes: #1059567)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 03 Jan 2024 21:40:38 +0100
+
+sudo (1.9.15p4-2) unstable; urgency=medium
+
+  * upload to unstable
+  * use pkg-config to place systemd units.
+    Thanks to Chris Hofstaedtler (Closes: #1059063)
+  * Add french debconf translation.
+    Thanks to bubu (Closes: #1058939)
+  * fix typo in NEWS.Debian.
+    Thanks to Vincent Danjean (Closes: #1058925)
+  * add persian debconf translation.
+    Thanks to Danial Behzadi
+  * add spanish debconf translation.
+    Thanks to Camaleón (Closes: #1059460)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 27 Dec 2023 17:53:13 +0100
+
+sudo (1.9.15p4-1) experimental; urgency=medium
+
+  * new upstream version 1.9.15p4
+  * add de.po template translation.
+    Thanks to Christoph Brinkhaus (Closes: #1058762)
+  * Enable AppArmor (MR 15, manually apṕlied)
+    Thanks to Will Shand
+  * remove legacy debian/rules.predh7
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 15 Dec 2023 22:57:27 +0100
+
+sudo (1.9.15p3-1) unstable; urgency=medium
+
+  * new upstream version 1.9.15p3
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Thu, 14 Dec 2023 20:22:51 +0100
+
+sudo (1.9.15p2-2) unstable; urgency=medium
+
+  * upload to unstable
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Fri, 08 Dec 2023 18:31:14 +0100
+
+sudo (1.9.15p2-1) experimental; urgency=medium
+
+  * the #DENOG15 release
+  * New upstream version 1.9.15p2
+  * mark sudo-ldap as deprecated.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 20 Nov 2023 14:15:22 +0100
+
+sudo (1.9.14p2-1) unstable; urgency=medium
+
+  * new upstream version
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Thu, 20 Jul 2023 00:31:52 +0200
+
+sudo (1.9.13p3-3) unstable; urgency=medium
+
+  * fix wrong patch to fix event log format
+    (added wrongly in 1.9.13p3-2)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 27 Jun 2023 11:43:07 +0200
+
+sudo (1.9.13p3-2) unstable; urgency=medium
+
+  * add upstream patch to fix event log format.
+    Thanks to Kimmo Suominen (Closes: #1039557)
+  * add patch to improve upstream spanish translation
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 27 Jun 2023 11:09:16 +0200
+
 sudo (1.9.13p3-1+deb12u1+pexip24u3) pexip-bookworm; urgency=medium
 
   * New versioning scheme
@@ -15,13 +147,6 @@ sudo (1.9.13p3-1+deb12u1pexip1) pexip-bookworm; urgency=medium
   * Initial bookworm build
 
  -- Mark Hymers <mark.hymers@pexip.com>  Thu, 16 Nov 2023 10:34:19 +0000
-
-sudo (1.9.13p3-1+deb12u1) bookworm; urgency=medium
-
-  * add upstream patch to fix event log format.
-    Thanks to Kimmo Suominen (Closes: #1039557)
-
- -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 27 Jun 2023 13:45:00 +0200
 
 sudo (1.9.13p3-1) unstable; urgency=medium
 

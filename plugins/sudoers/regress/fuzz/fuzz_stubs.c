@@ -38,8 +38,9 @@
 #endif /* NEED_RESOLV_H */
 #include <netdb.h>
 
-#include "sudoers.h"
-#include "interfaces.h"
+#include <sudoers.h>
+#include <timestamp.h>
+#include <interfaces.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
@@ -56,6 +57,18 @@ init_eventlog_config(void)
     return;
 }
 
+bool
+pivot_root(const char *new_root, struct sudoers_pivot *state)
+{
+    return true;
+}
+
+bool
+unpivot_root(struct sudoers_pivot *state)
+{
+    return true;
+}
+
 int
 group_plugin_query(const char *user, const char *group, const struct passwd *pw)
 {
@@ -63,7 +76,7 @@ group_plugin_query(const char *user, const char *group, const struct passwd *pw)
 }
 
 bool
-set_perms(int perm)
+set_perms(const struct sudoers_context *ctx, int perm)
 {
     return true;
 }
@@ -81,7 +94,7 @@ rewind_perms(void)
 }
 
 bool
-sudo_nss_can_continue(struct sudo_nss *nss, int match)
+sudo_nss_can_continue(const struct sudo_nss *nss, int match)
 {
     return true;
 }

@@ -19,6 +19,7 @@ define CONFIGURE_ARGS
 	--with-fqdn
 	--with-logging=syslog
 	--with-logfac=authpriv
+	--with-devel
 	--with-env-editor
 	--with-editor=/usr/bin/editor
 	--with-timeout=15
@@ -35,12 +36,14 @@ define CONFIGURE_ARGS
 endef
 
 ifeq ($(DEB_HOST_ARCH_OS),linux)
-CONFIGURE_ARGS += --with-selinux --with-linux-audit --enable-tmpfiles.d=/usr/lib/tmpfiles.d
+CONFIGURE_ARGS += --with-apparmor --with-selinux --with-linux-audit --enable-tmpfiles.d=/usr/lib/tmpfiles.d
 endif
 
 # Consistently use /bin/mv to ensure reproducible builds regardless of
 # building on a usrmerge or non-usrmerge system.
 CONFIGURE_ARGS += MVPROG=/bin/mv
+
+deb_systemdsystemunitdir = $(shell pkg-config --variable=systemdsystemunitdir systemd)
 
 %:
 		dh $@
@@ -75,8 +78,8 @@ override_dh_auto_install:
 	for pkg in sudo sudo-ldap; do \
 		mv debian/$$pkg/etc/sudoers.dist \
 		   debian/$$pkg/usr/share/doc/$$pkg/examples/sudoers.dist; \
-		mkdir -p debian/$$pkg/lib/systemd/system; \
-		ln -s /dev/null debian/$$pkg/lib/systemd/system/sudo.service; \
+		mkdir -p debian/$$pkg$(deb_systemdsystemunitdir)/; \
+		ln -s /dev/null debian/$$pkg$(deb_systemdsystemunitdir)/sudo.service; \
 	done
 
 execute_after_dh_fixperms:

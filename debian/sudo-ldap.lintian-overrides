@@ -4,7 +4,6 @@ sudo-ldap: elevated-privileges 4755 root/root [usr/bin/sudo]
 # two variants for different lintian versions
 # the init script job is done by systemd-tmpfiles on systemd systems
 sudo-ldap: omitted-systemd-service-for-init.d-script sudo-ldap [etc/init.d/sudo-ldap]
-sudo-ldap: package-supports-alternative-init-but-no-init.d-script [lib/systemd/system/sudo.service]
 
 # a false alarm, see #204975
 sudo-ldap: package-has-unnecessary-activation-of-ldconfig-trigger

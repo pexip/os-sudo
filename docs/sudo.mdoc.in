@@ -24,7 +24,7 @@
 .nr BA @BAMAN@
 .nr LC @LCMAN@
 .nr PS @PSMAN@
-.Dd January 16, 2023
+.Dd August 9, 2023
 .Dt SUDO @mansectsu@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -560,11 +560,21 @@ and the security policy supports a verbose output format.
 .Pp
 If a
 .Ar command
-is specified and is permitted by the security policy, the fully-qualified
-path to the
+is specified and is permitted by the security policy for the invoking
+user (or the,
+.Ar user
+specified by the
+.Fl U
+option) on the current host,
+the fully-qualified path to the
 .Ar command
 is displayed along with any
 .Ar arg Ns s.
+If
+.Fl l
+is specified more than once (and the security policy supports it),
+the matching rule is displayed in a verbose format along with the
+.Ar command .
 If a
 .Ar command
 is specified but not allowed by the policy,
@@ -578,7 +588,9 @@ Unlike the
 flag, existing cached credentials are used if they are valid.
 To detect when the user's cached credentials are valid (or when no
 authentication is required), the following can be used:
-.Dl sudo -Nnv
+.Bd -literal -offset 4n
+sudo -Nnv
+.Ed
 .Pp
 Not all security policies support credential caching.
 .It Fl n , -non-interactive
@@ -934,6 +946,8 @@ process passes the
 .Ar command Ns 's
 exit status to the security policy's close function, as well as the
 close function of any configured audit plugin, and exits.
+This mode is the default for sudo versions 1.9.14 and above when using
+the sudoers policy.
 .Pp
 If no pty is used,
 .Nm
@@ -975,6 +989,8 @@ Both
 and
 .Em pam_setcred
 are enabled by default on systems using PAM.
+This mode is the default for sudo versions prior to 1.9.14 when using
+the sudoers policy.
 .Pp
 On systems that use PAM, the security policy's close function
 is responsible for closing the PAM session.
@@ -1329,6 +1345,8 @@ Default editor to use in
 (sudoedit) mode.
 .It Ev SUDO_GID
 Set to the group-ID of the user who invoked sudo.
+.It Ev SUDO_HOME
+Set to the home directory of the user who invoked sudo.
 .It Ev SUDO_PROMPT
 Used as the default password prompt unless the
 .Fl p
@@ -1595,7 +1613,19 @@ set-user-ID shell scripts are generally safe).
 .Sh BUGS
 If you believe you have found a bug in
 .Nm ,
-you can submit a bug report at https://bugzilla.sudo.ws/
+you can either file a bug report in the sudo bug database,
+https://bugzilla.sudo.ws/, or open an issue at
+https://github.com/sudo-project/sudo/issues.
+If you would prefer to use email, messages may be sent to the
+sudo-workers mailing list,
+https://www.sudo.ws/mailman/listinfo/sudo-workers (public)
+or <sudo@sudo.ws> (private).
+.Pp
+Please not report security vulnerabilities through public GitHub
+issues, Bugzilla or mailing lists.
+Instead, report them via email to <Todd.Miller@sudo.ws>.
+You may encrypt your message with PGP if you would like, using
+the key found at https://www.sudo.ws/dist/PGPKEYS.
 .Sh SUPPORT
 Limited free support is available via the sudo-users mailing list,
 see https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or

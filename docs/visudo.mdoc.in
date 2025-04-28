@@ -20,7 +20,7 @@
 .\" Agency (DARPA) and Air Force Research Laboratory, Air Force
 .\" Materiel Command, USAF, under agreement number F39502-99-1-0512.
 .\"
-.Dd January 16, 2023
+.Dd July 27, 2023
 .Dt VISUDO @mansectsu@
 .Os Sudo @PACKAGE_VERSION@
 .Sh NAME
@@ -44,6 +44,11 @@ and checks for syntax errors before installing the edited file.
 If the
 .Em sudoers
 file is currently being edited you will receive a message to try again later.
+.Pp
+If the
+.Em sudoers
+file does not exist, it will be created unless the editor exits
+without writing to the file.
 .Pp
 .Nm
 parses the
@@ -443,6 +448,31 @@ will ignore cycles when parsing
 the
 .Em sudoers
 file.
+.It Li ignoring editor backup file
+While processing a
+.Em @includedir
+or
+.Em #includedir ,
+a file was found with a name that ends in
+.Ql ~
+or
+.Em .bak .
+Such files are skipped by
+.Nm sudo
+and
+.Nm .
+.It Li ignoring file name containing '.'
+While processing a
+.Em @includedir
+or
+.Em #includedir ,
+a file was found with a name that contains a
+.Ql .\&
+character.
+Such files are skipped by
+.Nm sudo
+and
+.Nm .
 .It Li unknown defaults entry \&"name\&"
 The
 .Em sudoers
@@ -478,7 +508,19 @@ allows shell escapes.
 .Sh BUGS
 If you believe you have found a bug in
 .Nm ,
-you can submit a bug report at https://bugzilla.sudo.ws/
+you can either file a bug report in the sudo bug database,
+https://bugzilla.sudo.ws/, or open an issue at
+https://github.com/sudo-project/sudo/issues.
+If you would prefer to use email, messages may be sent to the
+sudo-workers mailing list,
+https://www.sudo.ws/mailman/listinfo/sudo-workers (public)
+or <sudo@sudo.ws> (private).
+.Pp
+Please not report security vulnerabilities through public GitHub
+issues, Bugzilla or mailing lists.
+Instead, report them via email to <Todd.Miller@sudo.ws>.
+You may encrypt your message with PGP if you would like, using
+the key found at https://www.sudo.ws/dist/PGPKEYS.
 .Sh SUPPORT
 Limited free support is available via the sudo-users mailing list,
 see https://www.sudo.ws/mailman/listinfo/sudo-users to subscribe or
