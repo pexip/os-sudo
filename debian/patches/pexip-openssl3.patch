@@ -1,0 +1,30 @@
+Index: sudo/logsrvd/tls_init.c
+===================================================================
+--- sudo.orig/logsrvd/tls_init.c
++++ sudo/logsrvd/tls_init.c
+@@ -271,9 +271,7 @@ init_tls_context(const char *ca_bundle_f
+ 
+     /* Only initialize the SSL library once. */
+     if (!initialized) {
+-	SSL_library_init();
+-	OpenSSL_add_all_algorithms();
+-	SSL_load_error_strings();
++	OPENSSL_init_ssl(0, NULL);
+ 	initialized = true;
+     }
+ 
+Index: sudo/plugins/sudoers/log_client.c
+===================================================================
+--- sudo.orig/plugins/sudoers/log_client.c
++++ sudo/plugins/sudoers/log_client.c
+@@ -204,9 +204,7 @@ tls_init(struct client_closure *closure)
+     }
+ 
+     closure->ssl_initialized = true;
+-    SSL_library_init();
+-    OpenSSL_add_all_algorithms();
+-    SSL_load_error_strings();
++    OPENSSL_init_ssl(0, NULL);
+     
+     /* Create the ssl context and enforce TLS 1.2 or higher. */
+     if ((closure->ssl_ctx = SSL_CTX_new(TLS_method())) == NULL) {

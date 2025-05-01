@@ -3,3 +3,4 @@ paths-in-samples.diff
 Whitelist-DPKG_COLORS-environment-variable.diff
 sudo-ldap-docs.patch
 X11R6.patch
+pexip-openssl3.patch
