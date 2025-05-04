@@ -1,13 +1,13 @@
 Source: sudo
 Section: admin
 Priority: optional
-Maintainer: Sudo Maintainers <sudo@packages.debian.org>
+Maintainer: Debian Sudo Maintainers <sudo@packages.debian.org>
 Uploaders: Marc Haber <mh+debian-packages@zugschlus.de>,
   Hanno Wagner <wagner@debian.org>,
   Hilko Bengen <bengen@debian.org>,
   Bastian Blank <waldi@debian.org>
-Build-Depends: debhelper-compat (= 13), dh-sequence-installnss, libpam0g-dev, libldap2-dev, libsasl2-dev, libapparmor-dev [linux-any], libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], zlib1g-dev, po-debconf, pkgconf, systemd-dev
-Standards-Version: 4.7.0
+Build-Depends: debhelper-compat (= 13), dh-sequence-installnss, libpam0g-dev, libldap2-dev, libsasl2-dev, libapparmor-dev [linux-any], libselinux1-dev [linux-any], autoconf, bison, flex, libaudit-dev [linux-any], zlib1g-dev, po-debconf, pkgconf, systemd-dev, tzdata
+Standards-Version: 4.7.2
 Rules-Requires-Root: no
 Vcs-Git: https://salsa.debian.org/sudo-team/sudo.git
 Vcs-Browser: https://salsa.debian.org/sudo-team/sudo

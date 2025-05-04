@@ -1,3 +1,15 @@
+sudo (1.9.16p2-2) unstable; urgency=medium
+
+  * new European Portuguese translation of debconf messages.
+    Thanks to Américo Monteiro (Closes: #1101892)
+  * add new Romanian debconf translation.
+    Thanks to Remus-Gabriel Chelu (Closes: #1102040)
+  * Build-Depend on tzdata.
+    Thanks to Chris Hofstaedtler and other Mini Debconf Hamburg people
+    (Closes: #1104681)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 04 May 2025 17:48:51 +0200
+
 sudo (1.9.16p2-1) unstable; urgency=medium
 
   * New upstream version 1.9.16p2
