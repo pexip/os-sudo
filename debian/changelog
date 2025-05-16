@@ -1,3 +1,9 @@
+sudo (1.9.16p2-2+pexip25u1) pexip-trixie; urgency=medium
+
+  * New upstream release
+
+ -- Mark Hymers <mark.hymers@pexip.com>  Fri, 16 May 2025 10:49:18 +0100
+
 sudo (1.9.16p2-2) unstable; urgency=medium
 
   * new European Portuguese translation of debconf messages.
