@@ -1,4 +1,6 @@
-sudo (1.9.15p2-1) unstable; urgency=medium
+sudo (1.9.16p2-2) unstable; urgency=medium
+
+  === sudo-ldap is going away ===
 
   sudo-ldap has become a burden to maintain. This is mainly due to the fact
   that the sudo team has neither the manpower nor the know-how to maintain
@@ -15,7 +17,7 @@ sudo (1.9.15p2-1) unstable; urgency=medium
   The combination of sudo and sssd is automatically tested in autopkgtest
   of sudo.
 
-  This is also being discussed in #1033728 in the Debian BTS.
+  sudo-ldap removal is also being discussed in #1033728 in the Debian BTS.
 
   Debian 13, "trixie", will be the last version of Debian that supports
   sudo-ldap. Please use the bookworm and trixie release cycles to migrate
@@ -25,7 +27,24 @@ sudo (1.9.15p2-1) unstable; urgency=medium
   while you're still using sudo-ldap. This is not going to work and
   will probably leave you without intended privilege escalation.
 
- -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 20 Nov 2023 10:07:57 +0100
+  === sudo_logsrvd is going away if no one is willing to help ===
+
+  Similar reasoning applies to input/output logging and sudo_logsrvd,
+  a feature that is also seldomly used in the Debian context. The sudo
+  maintainer team plans to remove this to avoid additional dependencies
+  in the basic sudo package.
+
+  Should you be willing to maintain sudo_logsrvd as part of the sudo team,
+  please get in touch with us. Please note that this is a long-term
+  commitment.
+
+  The removal of the input/output plugins and sudo_logsrvd are discussed
+  in #1101451 in the Debian BTS.
+
+  Upgrading from Debian 13 to Debian 14 will most likely leave you without
+  sudo logging.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Sun, 04 May 2025 17:48:00 +0200
 
 sudo (1.9.5p2-3) unstable; urgency=medium
 
