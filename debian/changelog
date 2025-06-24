@@ -1,3 +1,10 @@
+sudo (1.9.13p3-1+deb12u2) bookworm-security; urgency=high
+
+  * Non-maintainer upload by the Security Team.
+  * Local Privilege Escalation via host option (CVE-2025-32462)
+
+ -- Salvatore Bonaccorso <carnil@debian.org>  Tue, 24 Jun 2025 09:29:50 +0200
+
 sudo (1.9.13p3-1+deb12u1) bookworm; urgency=medium
 
   * add upstream patch to fix event log format.
