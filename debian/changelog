@@ -1,3 +1,12 @@
+sudo (1.9.16p2-3) unstable; urgency=high
+
+  * backport upstream patch for CVE-2025-32463
+  * add upstream patch for CVE-2025-32462
+  * Add new italian debconf translation.
+    Thanks to Ceppo (Closes: #1108208)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 30 Jun 2025 07:55:33 +0200
+
 sudo (1.9.16p2-2) unstable; urgency=medium
 
   * new European Portuguese translation of debconf messages.
