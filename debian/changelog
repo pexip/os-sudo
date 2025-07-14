@@ -1,3 +1,9 @@
+sudo (1.9.13p3-1+pexip24u3+deb12u2) pexip; urgency=medium
+
+  * New upstream release
+
+ -- Huw Jones <huw@pexip.com>  Mon, 14 Jul 2025 14:07:24 +0000
+
 sudo (1.9.13p3-1+deb12u2) bookworm-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
