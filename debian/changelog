@@ -1,3 +1,12 @@
+sudo (1.9.13p3-1+deb12u3) bookworm; urgency=medium
+
+  * Apply a patch fro Marcos Del Sol Vives to Enable Intel CET on amd64 only.
+    This has been discussed with the TC in #1113774. After following their
+    advice to apply the patch, I verified that this change produces an
+    identical deb on amd64 (Closes: #1124339)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 30 Dec 2025 21:07:33 +0100
+
 sudo (1.9.13p3-1+deb12u2) bookworm-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
