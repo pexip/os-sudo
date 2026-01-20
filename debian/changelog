@@ -1,3 +1,18 @@
+sudo (1.9.13p3-1+pexip24u4+deb12u3) pexip; urgency=medium
+
+  * New upstream release
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Tue, 20 Jan 2026 15:11:59 +0000
+
+sudo (1.9.13p3-1+deb12u3) bookworm; urgency=medium
+
+  * Apply a patch fro Marcos Del Sol Vives to Enable Intel CET on amd64 only.
+    This has been discussed with the TC in #1113774. After following their
+    advice to apply the patch, I verified that this change produces an
+    identical deb on amd64 (Closes: #1124339)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 30 Dec 2025 21:07:33 +0100
+
 sudo (1.9.13p3-1+pexip24u3+deb12u2) pexip; urgency=medium
 
   * New upstream release
