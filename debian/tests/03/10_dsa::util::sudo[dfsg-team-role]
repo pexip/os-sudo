@@ -1,0 +1,1 @@
+root    ALL=(ALL:ALL) /usr/bin/----marker----/this-is-the-sudoersd-10_dsa\:\:util\:\:sudo[dfsg-team-role]-file

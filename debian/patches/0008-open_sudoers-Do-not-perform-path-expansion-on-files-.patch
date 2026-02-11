@@ -1,0 +1,34 @@
+From: "Todd C. Miller" <Todd.Miller@sudo.ws>
+Date: Sat, 24 Jan 2026 11:30:06 -0700
+Subject: open_sudoers: Do not perform path expansion on files in an
+ includedir
+
+A file in an includedir containing one or more colons (':') in the
+name we was being expanded as a colon-separated path instead of
+being opened as-is.  This fixes a regression introduced in
+sudo 1.9.14.  Bug #1085
+---
+ plugins/sudoers/sudoers.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/plugins/sudoers/sudoers.c b/plugins/sudoers/sudoers.c
+index 0f75c96..fecd279 100644
+--- a/plugins/sudoers/sudoers.c
++++ b/plugins/sudoers/sudoers.c
+@@ -1286,7 +1286,15 @@ open_sudoers(const char *path, char **outfile, bool doedit, bool *keepopen)
+     int error, fd;
+     debug_decl(open_sudoers, SUDOERS_DEBUG_PLUGIN);
+ 
+-    fd = sudo_open_conf_path(path, fname, sizeof(fname), open_file);
++    if (outfile == NULL) {
++	/* Single file, do not treat as a path. */
++	fd = open_file(path, O_RDONLY|O_NONBLOCK);
++        if (fd != -1)
++            (void)fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK);
++    } else {
++	/* Could be a colon-separated path of file names. */
++	fd = sudo_open_conf_path(path, fname, sizeof(fname), open_file);
++    }
+     if (sudoers_ctx.parser_conf.ignore_perms) {
+ 	/* Skip sudoers security checks when ignore_perms is set. */
+ 	if (fd == -1 || fstat(fd, &sb) == -1)

@@ -1,3 +1,10 @@
+dn: dc=example,dc=com
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Example Organization
+dc: example
+
 dn: ou=users,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit

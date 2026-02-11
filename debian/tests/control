@@ -1,16 +1,11 @@
 Tests: 01-getroot
-Depends: sudo, adduser
+Depends: adduser, sudo, cracklib-runtime
 Restrictions: needs-root
 
 Tests: 02-1003969-audit-no-resolve
 Depends: sudo
 Restrictions: needs-root
 
-Tests: 03-getroot-ldap
-Depends: sudo-ldap, adduser, slapd, ldap-utils, cron
-Restrictions: needs-root
-
 Tests: 04-getroot-sssd
-Depends: sudo, adduser, slapd, ldap-utils, sssd-common, sssd-ldap, cron
+Depends: adduser, cron, ldap-utils, procps, slapd, sssd-common, sssd-ldap, sudo, socat, libnss-sss, libpam-sss
 Restrictions: needs-root
-
