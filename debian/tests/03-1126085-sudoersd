@@ -1,0 +1,32 @@
+#!/bin/sh
+
+set -e
+
+TESTNR="03"
+BASEDIR="$(pwd)/debian/tests"
+COMMONDIR="${BASEDIR}/common"
+DIR="${BASEDIR}/${TESTNR}"
+PATH="/bin:/usr/bin:/sbin:/usr/sbin"
+FILES="$(find $DIR/sudoersd/ -type f)"
+echo $FILES
+DSTFILES="$(echo $FILES | sed "s|${DIR}/sudoersd|/etc/sudoers.d|g")"
+echo $DSTFILES
+
+trap '
+  true
+' 0 INT QUIT ABRT PIPE TERM
+
+printf "copy files to sudoers ... "
+cp $FILES /etc/sudoers.d/
+printf "collect sudo -l output ... "
+OUTPUT="$(sudo -l | grep -- ----marker----)"
+EXPECTED="    (ALL : ALL) /usr/bin/----marker----/this-is-the-sudoersd-10_dsa\:\:util\:\:sudo[dfsg-team-role]-file
+    (ALL : ALL) /usr/bin/----marker----/this-is-the-sudoersd-root-file"
+if [ "$OUTPUT" != "$EXPECTED" ]; then
+    printf "sudo -l output not as expected, Test failed\n"
+    exit 1
+fi
+
+printf "test series sucessful, exit 0\n"
+exit 0
+

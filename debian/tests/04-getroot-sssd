@@ -17,58 +17,89 @@ HOMEDIRA="/home/${ACCTA}"
 HOMEDIRB="/home/${ACCTB}"
 LDIFDIR="${DIR}/ldif"
 SSSDCONF="/etc/sssd/sssd.conf"
+RUNDIR="/run/slapd"
+VARRUNDIR="/var/run/slapd"
 
 trap '
   kill $(pidof slapd) 2>/dev/null || true
   kill $(pidof sssd) 2>/dev/null || true
+  kill $(pidof socat) 2>/dev/null || true
+  rm -f /dev/log || true
 ' 0 INT QUIT ABRT PIPE TERM
 
 # openssl req -x509 -days 365 -nodes -newkey rsa:4096 -keyout server_key.pem -out server_cert.pem --subj "/C=DE/CN=emptysid86.zugschlus.de"
 
+printf "make and chown dirs ... "
+mkdir -p "${RUNDIR}" "${VARRUNDIR}"
+chown openldap "${VARRUNDIR}"
 < ${LDIFDIR}/debconf debconf-set-selections
+
 printf "clean up ldap database ... "
 rm -rf /var/lib/ldap/*.mdb
+
 printf "move configuration in place ... "
 mkdir -p /etc/ldap /etc/sssd
 cp ${LDIFDIR}/server_*.pem /etc/ldap/
 cp ${LDIFDIR}/ldap.conf /etc/ldap/
 chown openldap:openldap /etc/ldap/server_*.pem
 chmod 600 /etc/ldap/server_key.pem
+# slapd.conf is only needed for OpenLDAP 2.4 on bullseye
+# but since it's already there now, use it for OpenLDAP 2.5+ as well
+# this is a testsuite. If you want /etc/ldap/slapd.d to be used (again),
+# please submit a patch that will also work on bullseye.
+cp ${LDIFDIR}/slapd.conf /etc/ldap/
 cp ${LDIFDIR}/sssd.conf /etc/sssd
 chown root:root /etc/sssd/sssd.conf
 chmod 600 /etc/sssd/sssd.conf
 cp ${LDIFDIR}/slapd-default /etc/default/slapd
 echo "slapd: [::1]" >> /etc/hosts.allow
+
 printf "reconfigure slapd ... "
 DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -pcritical slapd 2>/dev/null
 kill $(pidof slapd) 2>/dev/null || true
 sleep 1
+
+if ! [ -S /dev/log ]; then
+  echo "starting fake syslog socket on /dev/log"
+
+  # remove stale file if present
+  [ -e /dev/log ] && rm -f /dev/log
+
+  socat -u UNIX-RECV:/dev/log,mode=666 STDOUT >/dev/null 2>/dev/null &
+fi
+
 printf "start slapd ... "
-slapd -h "ldaps:/// ldapi:///" -g openldap -u openldap -F /etc/ldap/slapd.d
+slapd -f /etc/ldap/slapd.conf -h "ldaps://:1636/ ldapi:///" -g openldap -u openldap
+
+printf "check slapd running .... "
+pgrep -a slapd
 # ldapsearch -x -LLL -s base -b "" namingContexts should work here
-printf "set LDAP passwords"
-ldapmodify -Y external -H ldapi:/// -f ${LDIFDIR}/tls.ldif 2>/dev/null
-ldapmodify -Y external -H ldapi:/// -f ${LDIFDIR}/adminpw.ldif 2>/dev/null
-ldapmodify -Y external -H ldapi:/// -f ${LDIFDIR}/adminpw-example-com.ldif 2>/dev/null
-printf "add users and groups OUs ..."
-ldapadd -x -D "cn=admin,dc=example,dc=com" -w ldappw -f ${LDIFDIR}/sss-ous.ldif 2>/dev/null
-printf "add users ..."
+
+printf "add users and groups OUs ...\n"
+ldapadd -x -c -D "cn=admin,dc=example,dc=com" -w ldappw -f ${LDIFDIR}/sss-ous.ldif 2>/dev/null || true
 
 printf "sssd.conf ...\n"
 cp ${LDIFDIR}/sssd.conf "${SSSDCONF}"
 
-printf "sudoers file ...\n"A
+printf "sudoers file ...\n"
 mkdir -p /etc/sudoers.d/
-mv ${LDIFDIR}/ldapsudoers /etc/sudoers.d/
+cp ${LDIFDIR}/ldapsudoers /etc/sudoers.d/
 chown root:root "${SSSDCONF}" /etc/sudoers.d/ /etc/sudoers.d/*
 chmod 755 /etc/sudoers.d/
 chmod 600 "${SSSDCONF}" /etc/sudoers.d/*
+
+printf "start sssd ..."
 kill $(pidof sssd) 2>/dev/null || true
 sleep 1
 sssd --logger=files -D
 
+printf "check sssd running .... "
+pgrep -a sssd
+
+printf "add users ..."
 for user in testuser1 testuser2; do
   ldapadd -x -D "cn=admin,dc=example,dc=com" -w ldappw -f ${LDIFDIR}/${user}.ldif 2>/dev/null
+  getent passwd ${user}
   mkdir -p /home/${user}
   chown ${user}:nogroup /home/${user}
 done

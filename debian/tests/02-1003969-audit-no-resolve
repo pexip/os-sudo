@@ -7,21 +7,29 @@ BASEDIR="$(pwd)/debian/tests"
 COMMONDIR="${BASEDIR}/common"
 DIR="${BASEDIR}/${TESTNR}"
 PATH="/bin:/usr/bin:/sbin:/usr/sbin"
-ACCTA="test${TESTNR}a"
-ACCTB="test${TESTNR}b"
-PASSWD="test${TESTNR}23456"
 HOMEDIRA="/root"
-LDIFDIR="${DIR}/ldif"
 
 trap '
   printf "\ntrap handler\n"
-  mv /etc/resolv.conf.disabled /etc/resolv.conf || true
-  mv /etc/hosts.disabled /etc/hosts || true
+  if [ -e /etc/resolv.conf.disabled ]; then
+    cp /etc/resolv.conf.disabled /etc/resolv.conf || true
+    rm -f /etc/resolv.conf.disabled || true
+  fi
+  if [ -e /etc/hosts.disabled ]; then
+    cp /etc/hosts.disabled /etc/hosts || true
+    rm -f /etc/hosts.disabled || true
+  fi
 ' 0 INT QUIT ABRT PIPE TERM
 
 printf "========= test %s\.1: sudo to nobody\n" "${TESTNR}"
-mv /etc/resolv.conf /etc/resolv.conf.disabled
-mv /etc/hosts /etc/hosts.disabled
+if [ -e /etc/resolv.conf ]; then
+  cp /etc/resolv.conf /etc/resolv.conf.disabled
+  : >/etc/resolv.conf
+fi
+if [ -e /etc/hosts ]; then
+  cp /etc/hosts /etc/hosts.disabled
+  : >/etc/hosts
+fi
 RET=0
 printf "trying sudo to nobody\n"
 cd "${HOMEDIRA}"
@@ -35,7 +43,7 @@ if [ "${STDERRLENGTH}" != "0" ]; then
   printf >&2 "stderr:\n"
   cat >&2 ${HOMEDIRA}/stderr
   printf >&2 "exit code %s\n" "${RET}"
-  printf >&2 "exit 1\n" "${RET}"
+  printf >&2 "exit 1\n"
   exit 1
 fi
 

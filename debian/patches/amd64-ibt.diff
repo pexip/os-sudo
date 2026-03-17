@@ -1,0 +1,28 @@
+From: Marcos Del Sol Vives <marcos@orca.pet>
+Date: Tue, 2 Sep 2025 00:00:35 +0200
+Subject: Enable Intel CET on amd64 only
+
+---
+ m4/hardening.m4 | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/m4/hardening.m4 b/m4/hardening.m4
+index f7d2a8c..cc7ee01 100644
+--- a/m4/hardening.m4
++++ b/m4/hardening.m4
+@@ -105,6 +105,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
+ 		])
+ 	    fi
+ 
++	    if test "$host_cpu" = "x86_64"; then
+ 	    # Check for control-flow transfer instrumentation (Intel CET).
+ 	    AX_CHECK_COMPILE_FLAG([-fcf-protection], [
+ 		AX_CHECK_LINK_FLAG([-fcf-protection], [
+@@ -112,6 +113,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
+ 		    AX_APPEND_FLAG([-Wc,-fcf-protection], [HARDENING_LDFLAGS])
+ 		])
+ 	    ])
++	    fi
+ 	fi
+ 
+ 	# Linker-specific hardening flags.

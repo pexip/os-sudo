@@ -9,7 +9,7 @@ passwd1=$(echo "$passwd" |cut -c1)
 # Note: we do need the 'xfoo' syntax here, since POSIX special-cases
 # the $passwd value '!' as negation.
 if [ "x$passwd" = "x*" ] || [ "x$passwd1" = "x!" ]; then
-  echo "root:rootpassword"  | chpasswd
+  echo "root:riegh@oh4ahR"  | chpasswd
 fi
 
 TESTNR="01"
@@ -19,7 +19,7 @@ DIR="${BASEDIR}/${TESTNR}"
 PATH="/bin:/usr/bin:/sbin:/usr/sbin"
 ACCTA="test${TESTNR}a"
 ACCTB="test${TESTNR}b"
-PASSWD="test${TESTNR}23456"
+PASSWD="test${TESTNR}Terah9ien7e"
 HOMEDIRA="/home/${ACCTA}"
 HOMEDIRB="/home/${ACCTB}"
 LDIFDIR="${DIR}/ldif"

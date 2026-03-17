@@ -1,3 +1,20 @@
+sudo (1.9.16p2-3+pexip25u3+deb13u1) pexip-trixie; urgency=medium
+
+  * New upstream release
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Tue, 17 Mar 2026 14:00:48 +0000
+
+sudo (1.9.16p2-3+deb13u1) trixie; urgency=medium
+
+  [ Marc Haber ]
+  * add upstream patch: Do not perform path expansion
+    Thanks to Adam D. Barratt" <adam@adam-barratt.org.uk> (Closes: #1126085)
+  * Enable Intel CET on amd64 only.
+    Thanks to Marcos Del Sol Vives (Closes: #1124339)
+  * Pull more robust test suite from unstable
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Wed, 11 Feb 2026 20:22:01 +0100
+
 sudo (1.9.16p2-3+pexip25u2) pexip-trixie; urgency=medium
 
   * Trixie build for product distribution
