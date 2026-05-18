@@ -7,4 +7,5 @@ X11R6.patch
 0008-upstream-patch-for-CVE-2025-32462.patch
 0008-open_sudoers-Do-not-perform-path-expansion-on-files-.patch
 amd64-ibt.diff
+0006-exec_mailer-Set-group-as-well-as-uid-when-running-th.patch
 pexip-openssl3.patch
