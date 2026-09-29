@@ -115,10 +115,10 @@ index 0663a38..ec3b569 100644
  
  void
 diff --git a/plugins/sudoers/logging.c b/plugins/sudoers/logging.c
-index bd4de92..9535289 100644
+index 07a34d1..5b4dc54 100644
 --- a/plugins/sudoers/logging.c
 +++ b/plugins/sudoers/logging.c
-@@ -1157,7 +1157,7 @@ init_eventlog_config(void)
+@@ -1155,7 +1155,7 @@ init_eventlog_config(void)
      eventlog_set_syslog_alertpri(def_syslog_badpri);
      eventlog_set_syslog_maxlen(def_syslog_maxlen);
      eventlog_set_file_maxlen(def_loglinelen);
@@ -128,7 +128,7 @@ index bd4de92..9535289 100644
      eventlog_set_logpath(def_logfile);
      eventlog_set_time_fmt(def_log_year ? "%h %e %T %Y" : "%h %e %T");
 diff --git a/plugins/sudoers/policy.c b/plugins/sudoers/policy.c
-index f3adfb0..27f6e58 100644
+index e3fe259..1440a71 100644
 --- a/plugins/sudoers/policy.c
 +++ b/plugins/sudoers/policy.c
 @@ -639,7 +639,7 @@ sudoers_policy_deserialize_info(struct sudoers_context *ctx, void *v,
