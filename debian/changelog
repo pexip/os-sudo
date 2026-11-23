@@ -1,3 +1,33 @@
+sudo (1.9.16p2-3+pexip25u5+deb13u5) pexip-trixie; urgency=medium
+
+  * New upstream release with security fix
+
+ -- Steve McIntyre <steve.mcintyre@pexip.com>  Mon, 23 Nov 2026 12:33:15 +0000
+
+sudo (1.9.16p2-3+deb13u5) trixie; urgency=medium
+
+  * bump version number to allow git-debpush to work again
+  * This is the first version reaching the archive with
+    CVE-2026-96512 fixed.
+    Thanks to Salvatore Bonaccorso (Closes: #1148890)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 29 Sep 2026 16:02:29 +0200
+
+sudo (1.9.16p2-3+deb13u4) trixie; urgency=medium
+
+  * bump version number to allow git-debpush to work again
+  * This is the first version reaching the archive with
+    CVE-2026-96512 fixed.
+    Thanks to Salvatore Bonaccorso (Closes: #1148890)
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Tue, 29 Sep 2026 15:24:34 +0200
+
+sudo (1.9.16p2-3+deb13u3) trixie; urgency=medium
+
+  * Apply upstream patches to address CVE-2026-96512.
+
+ -- Marc Haber <mh+debian-packages@zugschlus.de>  Mon, 28 Sep 2026 16:38:31 +0200
+
 sudo (1.9.16p2-3+pexip25u4+deb13u2) pexip-trixie; urgency=medium
 
   * New upstream release

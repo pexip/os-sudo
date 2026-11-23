@@ -1,6 +1,14 @@
-Description: Adapt README.LDAP to the actual state of the sudo-ldap package
-Author: Marc Haber <mh+debian-packages@zugschlus.de>
+From: Marc Haber <mh+debian-packages@zugschlus.de>
+Date: Fri, 3 Apr 2026 06:58:39 +0200
+Subject: Adapt README.LDAP to the actual state of the sudo-ldap package
+
 Forwarded: not-needed
+---
+ README.LDAP.md | 32 ++++++--------------------------
+ 1 file changed, 6 insertions(+), 26 deletions(-)
+
+diff --git a/README.LDAP.md b/README.LDAP.md
+index 7eb4da0..b69b470 100644
 --- a/README.LDAP.md
 +++ b/README.LDAP.md
 @@ -35,22 +35,8 @@ They are one and the same.
@@ -28,7 +36,7 @@ Forwarded: not-needed
  
  ## Schema Changes
  
-@@ -186,13 +172,10 @@ I recommend using any of the following L
+@@ -186,13 +172,10 @@ I recommend using any of the following LDAP browsers to administer your SUDOers.
  
    There are dozens of others, some Open Source, some free, some not.
  
@@ -45,7 +53,7 @@ Forwarded: not-needed
  
  See the "Configuring ldap.conf" section in the sudoers.ldap manual
  for a list of supported ldap.conf parameters and an example ldap.conf
-@@ -204,10 +187,7 @@ After configuring /etc/ldap.conf, you mu
+@@ -204,10 +187,7 @@ After configuring /etc/ldap.conf, you must add a line in the
  /etc/nsswitch.conf file to tell sudo to look in LDAP for sudoers.
  See the "Configuring nsswitch.conf" section in the sudoers.ldap
  manual for details.  Sudo will use /etc/nsswitch.conf even if the

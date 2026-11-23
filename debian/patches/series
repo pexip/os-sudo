@@ -8,4 +8,8 @@ X11R6.patch
 0008-open_sudoers-Do-not-perform-path-expansion-on-files-.patch
 amd64-ibt.diff
 0006-exec_mailer-Set-group-as-well-as-uid-when-running-th.patch
+0011-sudo-ignore-user-specified-TZ-environment-variable.patch
+0012-Remove-TZ-from-sudo-s-working-environment-without-mo.patch
+0013-Copy-envp-submit_envp-instead-of-replacing-the-envir.patch
+
 pexip-openssl3.patch

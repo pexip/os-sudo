@@ -1,6 +1,15 @@
-Description: improve spanish program translation
+From: Debian Sudo Maintainers <sudo@packages.debian.org>
+Date: Fri, 3 Apr 2026 06:58:39 +0200
+Subject: improve spanish program translation
+
 Forwarded: https://bugzilla.sudo.ws/show_bug.cgi?id=1052
 Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace59741f773c9c7b476a27
+---
+ po/es.po | 78 ++++++++++++++++++++++++++++++++--------------------------------
+ 1 file changed, 39 insertions(+), 39 deletions(-)
+
+diff --git a/po/es.po b/po/es.po
+index 5e238a1..97b0c9c 100644
 --- a/po/es.po
 +++ b/po/es.po
 @@ -8,7 +8,7 @@ msgstr ""
@@ -57,7 +66,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: lib/util/sudo_conf.c:584
  #, c-format
-@@ -185,7 +185,7 @@ msgstr "no se puede cambiar de root a %s
+@@ -185,7 +185,7 @@ msgstr "no se puede cambiar de root a %s"
  #: src/exec.c:215 src/exec.c:221 src/exec.c:228
  #, c-format
  msgid "unable to change to runas uid (%u, %u)"
@@ -66,7 +75,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/exec.c:246
  #, c-format
-@@ -201,7 +201,7 @@ msgstr "no se puede establecer el maneja
+@@ -201,7 +201,7 @@ msgstr "no se puede establecer el manejador para señal %d"
  
  #: src/exec_common.c:171
  msgid "unable to remove PRIV_PROC_EXEC from PRIV_LIMIT"
@@ -75,7 +84,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/exec_monitor.c:364
  msgid "error reading from socketpair"
-@@ -259,11 +259,11 @@ msgstr "no se puede restaurar la etiquet
+@@ -259,11 +259,11 @@ msgstr "no se puede restaurar la etiqueta tty "
  
  #: src/exec_nopty.c:358 src/exec_pty.c:1338
  msgid "policy plugin failed session initialization"
@@ -98,7 +107,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/exec_pty.c:1531
  msgid "unable to send message to monitor process"
-@@ -303,7 +303,7 @@ msgstr "%s debe ser propiedad del uid %d
+@@ -303,7 +303,7 @@ msgstr "%s debe ser propiedad del uid %d"
  #: src/load_plugins.c:136
  #, c-format
  msgid "%s must be only be writable by owner"
@@ -107,7 +116,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/load_plugins.c:177
  #, c-format
-@@ -323,12 +323,12 @@ msgstr "tipo de política desconocido %d
+@@ -323,12 +323,12 @@ msgstr "tipo de política desconocido %d encontrado en %s"
  #: src/load_plugins.c:198
  #, c-format
  msgid "incompatible plugin major version %d (expected %d) found in %s"
@@ -122,7 +131,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/load_plugins.c:209
  msgid "only a single policy plugin may be specified"
-@@ -357,7 +357,7 @@ msgstr "error interno: desbordamiento de
+@@ -357,7 +357,7 @@ msgstr "error interno: desbordamiento de %s"
  #: src/parse_args.c:224
  #, c-format
  msgid "invalid environment variable name: %s"
@@ -131,7 +140,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:320
  msgid "the argument to -C must be a number greater than or equal to 3"
-@@ -365,11 +365,11 @@ msgstr "el argumento -C debe ser un núm
+@@ -365,11 +365,11 @@ msgstr "el argumento -C debe ser un número mayor o igual a 3"
  
  #: src/parse_args.c:505
  msgid "you may not specify both the `-i' and `-s' options"
@@ -145,7 +154,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:519
  msgid "the `-E' option is not valid in edit mode"
-@@ -377,7 +377,7 @@ msgstr "la opción '-E' no es válida en
+@@ -377,7 +377,7 @@ msgstr "la opción '-E' no es válida en el modo edición"
  
  #: src/parse_args.c:521
  msgid "you may not specify environment variables in edit mode"
@@ -154,7 +163,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:529
  msgid "the `-U' option may only be used with the `-l' option"
-@@ -393,7 +393,7 @@ msgstr "sudoedit no está soportado en �
+@@ -393,7 +393,7 @@ msgstr "sudoedit no está soportado en ésta plataforma"
  
  #: src/parse_args.c:682
  msgid "Only one of the -e, -h, -i, -K, -l, -s, -v or -V options may be specified"
@@ -172,7 +181,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:708
  msgid "use specified BSD authentication type"
-@@ -464,7 +464,7 @@ msgstr "asigna la variable HOME al direc
+@@ -464,7 +464,7 @@ msgstr "asigna la variable HOME al directorio de inicio del usuario"
  
  #: src/parse_args.c:729
  msgid "display help message and exit"
@@ -181,7 +190,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:731
  msgid "run command on host (if supported by plugin)"
-@@ -472,23 +472,23 @@ msgstr "ejecuta comando en host (si est�
+@@ -472,23 +472,23 @@ msgstr "ejecuta comando en host (si está soportado por plugin)"
  
  #: src/parse_args.c:733
  msgid "run login shell as the target user; a command may also be specified"
@@ -210,7 +219,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:743
  msgid "preserve group vector instead of setting to target's"
-@@ -508,7 +508,7 @@ msgstr "lee la contraseña desde la entr
+@@ -508,7 +508,7 @@ msgstr "lee la contraseña desde la entrada estandar"
  
  #: src/parse_args.c:753
  msgid "run shell as the target user; a command may also be specified"
@@ -219,7 +228,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:756
  msgid "create SELinux security context with specified type"
-@@ -516,15 +516,15 @@ msgstr "crea el contexto de seguridad SE
+@@ -516,15 +516,15 @@ msgstr "crea el contexto de seguridad SELinux con el tipo especificado"
  
  #: src/parse_args.c:759
  msgid "terminate command after the specified time limit"
@@ -238,7 +247,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:765
  msgid "display version information and exit"
-@@ -532,7 +532,7 @@ msgstr "muestra la información de la ve
+@@ -532,7 +532,7 @@ msgstr "muestra la información de la versión y sale"
  
  #: src/parse_args.c:767
  msgid "update user's timestamp without running a command"
@@ -247,7 +256,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/parse_args.c:769
  msgid "stop processing command line arguments"
-@@ -564,16 +564,16 @@ msgstr "no se puede restaurar el context
+@@ -564,16 +564,16 @@ msgstr "no se puede restaurar el contexto para %s"
  #: src/selinux.c:172
  #, c-format
  msgid "unable to open %s, not relabeling tty"
@@ -267,7 +276,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/selinux.c:192
  msgid "unknown security class \"chr_file\", not relabeling tty"
-@@ -581,7 +581,7 @@ msgstr "clase de seguridad desconocida \
+@@ -581,7 +581,7 @@ msgstr "clase de seguridad desconocida \"chr_file\", tty no reetiquetada"
  
  #: src/selinux.c:197
  msgid "unable to get new tty context, not relabeling tty"
@@ -276,7 +285,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/selinux.c:204
  msgid "unable to set new tty context"
-@@ -590,12 +590,12 @@ msgstr "no se puede establecer nuevo con
+@@ -590,12 +590,12 @@ msgstr "no se puede establecer nuevo contexto tty"
  #: src/selinux.c:278
  #, c-format
  msgid "you must specify a role for type %s"
@@ -291,7 +300,7 @@ Origin: https://salsa.debian.org/sudo-team/sudo/-/commit/7f12ddebd18ea2021ace597
  
  #: src/selinux.c:302
  #, c-format
-@@ -675,7 +675,7 @@ msgstr "no podría unirse al proyecto \"
+@@ -675,7 +675,7 @@ msgstr "no podría unirse al proyecto \"%s\""
  #: src/solaris.c:96
  #, c-format
  msgid "no resource pool accepting default bindings exists for project \"%s\""

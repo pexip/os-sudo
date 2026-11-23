@@ -7,10 +7,10 @@ Subject: Enable Intel CET on amd64 only
  1 file changed, 2 insertions(+)
 
 diff --git a/m4/hardening.m4 b/m4/hardening.m4
-index f7d2a8c..cc7ee01 100644
+index 45c501f..6c2caf2 100644
 --- a/m4/hardening.m4
 +++ b/m4/hardening.m4
-@@ -105,6 +105,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
+@@ -100,6 +100,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
  		])
  	    fi
  
@@ -18,7 +18,7 @@ index f7d2a8c..cc7ee01 100644
  	    # Check for control-flow transfer instrumentation (Intel CET).
  	    AX_CHECK_COMPILE_FLAG([-fcf-protection], [
  		AX_CHECK_LINK_FLAG([-fcf-protection], [
-@@ -112,6 +113,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
+@@ -107,6 +108,7 @@ AC_DEFUN([SUDO_CHECK_HARDENING], [
  		    AX_APPEND_FLAG([-Wc,-fcf-protection], [HARDENING_LDFLAGS])
  		])
  	    ])
